@@ -346,17 +346,22 @@
         document.querySelectorAll('[data-cmf-media-picker]').forEach(initPicker);
     }
 
+    /**
+     * 后挂载 picker 的初始化入口，由视图的 x-init 调用。
+     *
+     * 弹窗（Filament Action / Modal）内容由 Alpine 挂载：既不触发 Livewire 的
+     * morph.added，也不在首屏 boot() 的扫描范围内，而 Alpine 的 x-init 是弹窗
+     * 内容挂载时必然会执行的钩子，故用它声明式触发，不再全局监听 DOM
+     * （全局 MutationObserver 会持续跟随整棵树的开销与副作用）。
+     * initPicker 自带 data-cmf-initialized 幂等保护，重复调用安全。
+     */
+    window.cmfMediaPickerInit = function (el) {
+        if (el) {
+            initPicker(el);
+        }
+    };
+
     document.addEventListener('DOMContentLoaded', boot);
     document.addEventListener('livewire:navigated', boot);
-    if (window.Livewire) {
-        window.Livewire.hook('morph.added', function (payload) {
-            var el = payload.el.querySelectorAll
-                ? payload.el.querySelectorAll('[data-cmf-media-picker]')
-                : [];
-            el.forEach(initPicker);
-            if (payload.el.matches && payload.el.matches('[data-cmf-media-picker]')) {
-                initPicker(payload.el);
-            }
-        });
-    }
+    boot();
 })();

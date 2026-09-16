@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Quansitech\Cmf\Media\Console;
 
 use Illuminate\Console\Command;
+use Illuminate\Console\View\TaskResult;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Quansitech\Cmf\Media\Models\Media;
@@ -44,20 +45,24 @@ class SmokeTestCommand extends Command
         try {
             $disk = Storage::disk($diskName);
 
-            $this->components->task("[{$diskName}] put {$path}", fn (): bool => $disk->put($path, $content));
-            $this->components->task("[{$diskName}] exists", function () use ($disk, $path): bool {
-                return $disk->exists($path);
-            });
-            $this->components->task("[{$diskName}] get 内容一致", function () use ($disk, $path, $content): bool {
-                return $disk->get($path) === $content;
-            });
-            $this->components->task("[{$diskName}] delete", function () use ($disk, $path): bool {
-                $disk->delete($path);
+            $results = [
+                $this->check("[{$diskName}] put {$path}", fn (): bool => (bool) $disk->put($path, $content)),
+                $this->check("[{$diskName}] exists", fn (): bool => $disk->exists($path)),
+                $this->check("[{$diskName}] get 内容一致", fn (): bool => $disk->get($path) === $content),
+                $this->check("[{$diskName}] delete", function () use ($disk, $path): bool {
+                    $disk->delete($path);
 
-                return ! $disk->exists($path);
-            });
+                    return ! $disk->exists($path);
+                }),
+            ];
         } catch (Throwable $e) {
             $this->components->error("冒烟失败：{$e->getMessage()}");
+
+            return self::FAILURE;
+        }
+
+        if (in_array(false, $results, true)) {
+            $this->components->error("驱动 {$driver} 冒烟未通过（见上方标红步骤）。");
 
             return self::FAILURE;
         }
@@ -65,5 +70,28 @@ class SmokeTestCommand extends Command
         $this->components->info("驱动 {$driver} 冒烟通过（put → exists → get → delete）。");
 
         return self::SUCCESS;
+    }
+
+    /**
+     * 跑一步检查并返回是否通过。
+     *
+     * Task 组件用 match 严格比较 TaskResult::*->value（int），闭包返回 bool
+     * 时失败步骤也会显示 DONE，故这里显式转换；同时把结果回传给 handle()
+     * 决定退出码，避免云端失败却以 0 退出。
+     */
+    private function check(string $description, callable $assertion): bool
+    {
+        $passed = false;
+
+        $this->components->task(
+            $description,
+            function () use ($assertion, &$passed): int {
+                $passed = (bool) $assertion();
+
+                return $passed ? TaskResult::Success->value : TaskResult::Failure->value;
+            },
+        );
+
+        return $passed;
     }
 }
