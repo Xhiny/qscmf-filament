@@ -169,6 +169,7 @@ Media 模型切换为可审计的 `AuditableMedia`。
 2. 重复上传同一文件，第二次无 PUT/POST 到云存储的请求（秒传生效）；
 3. 500MB 上限文件算 hash 期间：内存占用不随文件大小增长、页面可正常交互、进度条持续推进；
 4. 云控制台确认对象 key 为 hash 路径。
+5. Filament Action / Modal **弹窗内**的 picker 同样能选文件（弹窗内容由 Alpine 挂载、不触发 Livewire 的 morph 钩子，故视图用 `x-init` 调用 `window.cmfMediaPickerInit` 初始化）。
 
 ## 测试
 
@@ -178,3 +179,5 @@ vendor/bin/pest
 ```
 
 Storage / Queue / Event 使用 Laravel fake；云 SDK 通过 Signer 接口隔离，单测不触网。
+
+弹窗场景的接线（视图 `x-init` ↔ JS 的 `window.cmfMediaPickerInit`）由 `tests/Unit/MediaPickerViewContractTest.php` 固化；真实弹窗行为按上方宿主集成 checklist 第 5 条人工验证。

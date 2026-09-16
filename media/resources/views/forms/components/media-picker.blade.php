@@ -8,6 +8,8 @@
     <div
         class="cmf-media-picker"
         data-cmf-media-picker
+        x-data
+        x-init="window.cmfMediaPickerInit && window.cmfMediaPickerInit($el)"
         data-state-path="{{ $statePath }}"
         data-multiple="{{ $isMultiple() ? '1' : '0' }}"
         data-check-url="{{ route('cmf-media.check') }}"
