@@ -137,12 +137,29 @@ class MediaPicker extends Field
     }
 
     /**
+     * 裁剪产物的 JPEG 重编码质量；PNG 保持无损，该值对它不生效。
+     */
+    public function getCropQuality(): float
+    {
+        return (float) config('cmf-media.crop.quality', 0.92);
+    }
+
+    /**
      * 把比例归一化成浮点数，顺带在配置写错时尽早报错。
      */
     protected static function normalizeAspectRatio(int|float|string|null $ratio): ?float
     {
-        if ($ratio === null || is_int($ratio) || is_float($ratio)) {
-            return $ratio === null ? null : (float) $ratio;
+        if ($ratio === null) {
+            return null;
+        }
+
+        // 数值写法同样要校验：静默放行负数会让 JS 侧的 (ratio > 0) 判定悄悄跳过裁剪
+        if (is_int($ratio) || is_float($ratio)) {
+            if ($ratio <= 0) {
+                throw new InvalidArgumentException("裁剪比例「{$ratio}」必须大于 0。");
+            }
+
+            return (float) $ratio;
         }
 
         $parts = preg_split('#[:/]#', $ratio);

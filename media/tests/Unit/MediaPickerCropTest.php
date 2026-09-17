@@ -23,6 +23,15 @@ it('keeps cropping off unless a ratio is declared', function (): void {
     expect(MediaPicker::make('cover')->getCropAspectRatio())->toBeNull();
 });
 
+it('rejects a non-positive ratio written as a number', function (int|float $ratio): void {
+    expect(fn (): MediaPicker => MediaPicker::make('cover')->cropAspectRatio($ratio))
+        ->toThrow(InvalidArgumentException::class);
+})->with([
+    '负数' => -1.5,
+    '零' => 0,
+    '零（浮点）' => 0.0,
+]);
+
 it('rejects a malformed ratio instead of guessing', function (string $ratio): void {
     expect(fn () => MediaPicker::make('cover')->cropAspectRatio($ratio))
         ->toThrow(InvalidArgumentException::class);
@@ -39,6 +48,11 @@ it('falls back to the configured output width and allows an override', function 
     expect(MediaPicker::make('cover')->getCropMaxWidth())
         ->toBe((int) config('cmf-media.crop.max_width'))
         ->and(MediaPicker::make('cover')->cropMaxWidth(800)->getCropMaxWidth())->toBe(800);
+});
+
+it('exposes the configured JPEG quality for the view', function (): void {
+    expect(MediaPicker::make('cover')->getCropQuality())
+        ->toBe((float) config('cmf-media.crop.quality', 0.92));
 });
 
 it('evaluates a closure ratio so it can follow live form state', function (): void {

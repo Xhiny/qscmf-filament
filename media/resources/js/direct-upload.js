@@ -338,7 +338,16 @@
             var files = Array.prototype.slice.call(input.files);
             input.value = '';
 
-            // 串行：裁剪层一次只处理一张，弹出多张会互相盖住
+            // 没开裁剪的字段保持并行，多选大文件不该被串行拖慢
+            if (! cropOptions) {
+                files.forEach(function (file) {
+                    handleFile(file);
+                });
+
+                return;
+            }
+
+            // 开了裁剪才串行：裁剪层一次只处理一张，多张并行会互相盖住
             files.reduce(function (chain, file) {
                 return chain.then(function () { return handleFile(file); });
             }, Promise.resolve());

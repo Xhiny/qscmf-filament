@@ -158,7 +158,16 @@
             }
 
             function onKeydown(event) {
-                if (event.key === 'Escape' && !exporting) {
+                if (event.key !== 'Escape') {
+                    return;
+                }
+
+                // 裁剪层不是 Filament 注册的弹窗，它在 window 上监听 Escape 关弹窗
+                // （document → window 冒泡），这里不拦住，用户在表单弹窗里按 Esc
+                // 取消裁剪会连底层表单一起关掉。导出中同样拦，只是不关裁剪层。
+                event.stopPropagation();
+
+                if (! exporting) {
                     finish(null);
                 }
             }

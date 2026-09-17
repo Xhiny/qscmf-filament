@@ -55,12 +55,38 @@ it('passes the crop ratio from the field down to the crop layer', function (): v
         ->toContain('getCropAspectRatio()')
         ->toContain('data-crop-aspect-ratio')
         ->toContain('data-crop-max-width')
+        ->toContain('data-crop-quality')
         ->and($uploader)
         ->toContain('dataset.cropAspectRatio')
         ->toContain('cropIfNeeded')
         // 裁剪必须在算 hash 之前完成，否则上报的 hash 与上传字节对不上
         ->toContain('window.cmfMediaCropFile')
         ->and($cropper)->toContain('window.cmfMediaCropFile = function');
+});
+
+/**
+ * Escape 冒泡路径是 document → window，而 Filament 弹窗在 window 上监听
+ * Escape 关弹窗。裁剪层不拦事件，用户在表单弹窗里按 Esc 取消裁剪会连底层
+ * 表单一起关掉、填了一半的内容全丢——只能靠这行 stopPropagation 兜住。
+ */
+it('keeps the escape key from closing the underlying modal', function (): void {
+    $cropper = file_get_contents(__DIR__.'/../../resources/js/crop.js');
+
+    expect($cropper)
+        ->toContain('event.stopPropagation()')
+        ->toContain('event.key !== \'Escape\'');
+});
+
+/**
+ * 无裁剪字段的多选上传应保持并行；串行只服务于「裁剪层一次只显示一张」。
+ */
+it('serializes uploads only when cropping is on', function (): void {
+    $uploader = file_get_contents(__DIR__.'/../../resources/js/direct-upload.js');
+
+    expect($uploader)
+        ->toContain('if (! cropOptions)')
+        ->toContain('files.forEach(')
+        ->toContain('files.reduce(');
 });
 
 /**
