@@ -4,6 +4,8 @@ media/vendor/
 media/composer.lock
 area/vendor/
 area/composer.lock
+import/vendor/
+import/composer.lock
 .idea/
 .vscode/
 .DS_Store
