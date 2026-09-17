@@ -32,6 +32,8 @@ jobs:
             repository_name: cmf-module-media
           - local_path: area
             repository_name: cmf-module-area
+          - local_path: import
+            repository_name: cmf-module-import
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -45,9 +47,9 @@ jobs:
           VERSION="v${TAG##*-v}"
 
           case "$PACKAGE" in
-            core|users|roles|auditing|media|area) ;;
+            core|users|roles|auditing|media|area|import) ;;
             *)
-              echo "::error::无法识别的 tag '$TAG'：请使用 {package}-v{version} 格式（package: core/users/roles/auditing/media/area）"
+              echo "::error::无法识别的 tag '$TAG'：请使用 {package}-v{version} 格式（package: core/users/roles/auditing/media/area/import）"
               exit 1
               ;;
           esac
@@ -67,7 +69,7 @@ jobs:
           SPLIT_TOKEN: ${{ secrets.SPLIT_TOKEN }}
         run: |
           if [ -z "$SPLIT_TOKEN" ]; then
-            echo "::notice::SPLIT_TOKEN 未配置，跳过 split（配置见 RELEASING.md）"
+            echo "::notice::SPLIT_TOKEN 未配置，跳过 split（配置见 .github/RELEASING.md）"
             echo "enabled=false" >> "$GITHUB_OUTPUT"
           else
             echo "enabled=true" >> "$GITHUB_OUTPUT"

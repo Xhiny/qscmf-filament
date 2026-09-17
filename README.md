@@ -11,6 +11,8 @@
 | `roles`（quansitech/cmf-module-roles） | 角色管理 Resource（Filament Shield 集成）、可审计角色模型、RolePolicy |
 | `auditing`（quansitech/cmf-module-auditing） | 中文版审计后台、回滚 Action、AuditPolicy、AuditLogger（pivot 审计补记） |
 | `media`（quansitech/cmf-module-media） | 媒体库：TOS/OSS/COS 浏览器直传与 local 本地上传、内容哈希去重（秒传）、引用计数与归零自动清理、MediaPicker 字段、RichEditor 富文本附件接管（HasMediaRichContent）、媒体管理 Resource |
+| `area`（quansitech/cmf-module-area） | 行政区划：内置四级区划数据、业务引用登记（merge_strategy）、AreaPicker、上游变更升级流水线 |
+| `import`（quansitech/cmf-module-import） | 导入扩展：仅 xlsx 导入（单元格归一与可疑值行级拒绝）、xlsx 模板生成（文本锁定/长度/下拉）、失败清单 xlsx 导出 |
 
 ## 安装（新项目）
 
@@ -130,5 +132,5 @@ php artisan make:cmf-module Blog --path=/var/www/qscmf-filament
 ## 仓库与发布
 
 本仓库为 monorepo（唯一真源），CI 按目录 split 出只读镜像仓库并同步到 Packagist：
-`quansitech/cmf-core` / `quansitech/cmf-module-users` / `quansitech/cmf-module-roles` / `quansitech/cmf-module-auditing` / `quansitech/cmf-module-media`。
-发版按包独立打 tag（如 `media-v1.1.0`，只 split 并发布 media），完整流程见 [RELEASING.md](RELEASING.md)。
+`quansitech/cmf-core` / `quansitech/cmf-module-users` / `quansitech/cmf-module-roles` / `quansitech/cmf-module-auditing` / `quansitech/cmf-module-media` / `quansitech/cmf-module-area` / `quansitech/cmf-module-import`。
+发版按包独立打 tag（如 `media-v1.1.0`，只 split 并发布 media），完整流程见 [RELEASING.md](.github/RELEASING.md)。

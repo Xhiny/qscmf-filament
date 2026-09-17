@@ -1,0 +1,59 @@
+{
+    "name": "quansitech/cmf-module-import",
+    "description": "QS CMF 导入扩展：Filament v5 ImportAction 的 xlsx 增强——仅 xlsx 导入（单元格归一与可疑值行级拒绝）、xlsx 模板生成（文本锁定/长度/下拉）、失败清单 xlsx 导出",
+    "type": "library",
+    "license": "proprietary",
+    "keywords": [
+        "cmf",
+        "filament",
+        "xlsx",
+        "import",
+        "excel",
+        "openspout",
+        "template"
+    ],
+    "require": {
+        "php": "^8.3",
+        "filament/actions": "^5.8",
+        "league/csv": "^9.27",
+        "openspout/openspout": "^4.23",
+        "phpoffice/phpspreadsheet": "^3.0 || ^4.0 || ^5.0"
+    },
+    "require-dev": {
+        "orchestra/testbench": "^10.0",
+        "phpunit/phpunit": "^11.0 || ^12.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "Quansitech\\Cmf\\Import\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Quansitech\\Cmf\\Import\\Tests\\": "tests/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Quansitech\\Cmf\\Import\\CmfImportServiceProvider"
+            ]
+        },
+        "branch-alias": {
+            "dev-main": "1.x-dev"
+        }
+    },
+    "config": {
+        "sort-packages": true
+    },
+    "scripts": {
+        "post-install-cmd": [
+            "@php -r \"foreach (['vendor/orchestra/testbench-core/laravel/bootstrap/cache', 'vendor/orchestra/testbench-core/laravel/storage/framework/cache', 'vendor/orchestra/testbench-core/laravel/storage/framework/sessions', 'vendor/orchestra/testbench-core/laravel/storage/framework/testing/disks', 'vendor/orchestra/testbench-core/laravel/storage/framework/views', 'vendor/orchestra/testbench-core/laravel/storage/logs', 'vendor/orchestra/testbench-core/laravel/storage/app/public'] as \\$d) { @mkdir(\\$d, 0777, true); @chmod(\\$d, 0777); }\""
+        ],
+        "post-update-cmd": [
+            "@php -r \"foreach (['vendor/orchestra/testbench-core/laravel/bootstrap/cache', 'vendor/orchestra/testbench-core/laravel/storage/framework/cache', 'vendor/orchestra/testbench-core/laravel/storage/framework/sessions', 'vendor/orchestra/testbench-core/laravel/storage/framework/testing/disks', 'vendor/orchestra/testbench-core/laravel/storage/framework/views', 'vendor/orchestra/testbench-core/laravel/storage/logs', 'vendor/orchestra/testbench-core/laravel/storage/app/public'] as \\$d) { @mkdir(\\$d, 0777, true); @chmod(\\$d, 0777); }\""
+        ]
+    },
+    "minimum-stability": "dev",
+    "prefer-stable": true
+}
