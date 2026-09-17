@@ -6,8 +6,9 @@ QS CMF 媒体模块：TOS / OSS / COS 浏览器直传（亦支持 local 本地�
 
 - **浏览器直传**：服务器只做「签发 + 建档」，文件流量不经过应用服务器；凭证限定单 key、短有效期（默认 10 分钟）
 - **local 本地驱动**：单机/内网场景可选 `CMF_MEDIA_DRIVER=local`，文件落服务器磁盘（默认 `public/cmf-media`），上传经应用服务器接收、服务端计算真实内容 hash 落盘建档（防伪更强）；秒传去重与引用计数逻辑与云驱动一致
-- **内容哈希去重（秒传）**：前端 Web Worker 分片（8MB）+ spark-md5 增量计算 MD5，内存占用恒定、不阻塞 UI；后端 `hash` 唯一索引兜底，对象 key 即 hash 路径（`{hash前2位}/{hash}.{ext}`）
+- **内容哈希去重（秒传）**：前端 Web Worker 分片（8MB）+ spark-md5 增量计算 MD5，内存占用恒定、不阻塞 UI；后端 `hash + disposition` 唯一索引兜底，对象 key 即 hash 路径（`{hash前2位}/{hash}[.{disposition}].{ext}`）
 - **回调防伪**：建档前 headObject 校验对象存在与 size 一致，单 PUT 对象的 ETag（即内容 MD5）与上报 hash 比对
+- **按入口上传规则**：多套规则按入口生效（类型 / 大小），服务端 check / sign / upload / callback 全链路强制，规则只能比全局白名单更严；文件访问行为（缓存时长、预览或下载、原始文件名下载）随入口生效（见「按入口上传规则与访问行为」）
 - **引用计数**：`media_usages` 关联表为准，`ref_count` 冗余加速；归零软删 + 延迟 Job 复查后删对象（可开关，见「归零删除队列」），竞态安全
 - **RichEditor 接管**：实现 Filament v5 `FileAttachmentProvider`，`HasMediaRichContent` 一行接入，富文本图片/附件上传自动去重建档、按内容 diff 同步引用、移除归零清理（见「RichEditor 富文本接管」）
 - **后台管理**：媒体列表（缩略图走云厂商 URL 图片处理参数，local 直接用原图；软删记录不展示）、详情页按类型预览（图片点击放大 / 视频音频在线播放 / 其他文件下载）、筛选/排序、引用明细、有引用禁删
@@ -69,6 +70,81 @@ use Quansitech\Cmf\Media\Filament\Forms\Components\MediaPicker;
 MediaPicker::make('cover')           // 单选，state 为 media id
 MediaPicker::make('gallery')->multiple()  // 多选，state 为 id 数组
 ```
+
+「从媒体库选择」入口（按钮 + 媒体库弹窗）**默认隐藏**，避免普通用户直接复用全站
+媒体库文件；需要时在 config 开启：
+
+```php
+// config/cmf-media.php
+'picker_library' => true,
+```
+
+已选媒体支持点击查看：**图片**弹窗预览大图、**视频/音频**内嵌播放、**其他类型**
+弹窗给出新窗口下载链接（是否落盘由对象的 Content-Disposition 元数据决定，
+见「按入口上传规则与访问行为」）。
+
+## 按入口上传规则与访问行为
+
+全局限制（`max_size` / `allowed_mimes`）只有一套时，不同入口（护理员资质照片、活动配图、
+文档预览、导出下载……）要求各不相同。`cmf-media.rules` 支持配置多套规则，入口声明使用
+哪套，**规则只能比全局白名单更严**（mimes 必须是 `allowed_mimes` 子集，配超出即抛配置错误；
+`max_size` 超过全局时按全局收紧），因此客户端声明哪套规则都不会放大权限。
+
+```php
+// config/cmf-media.php
+'rules' => [
+    'nurse-cert' => [      // 护理员资质照片：仅图片 ≤10MB
+        'mimes' => ['image/*'],
+        'max_size' => 10 * 1024 * 1024,
+    ],
+    'activity-image' => ['mimes' => ['image/*'], 'max_size' => 20 * 1024 * 1024],
+    'doc-preview'    => ['mimes' => ['application/pdf'], 'disposition' => 'inline', 'cache_seconds' => 86400],
+    'export'         => ['mimes' => ['application/zip'], 'disposition' => 'attachment'],
+],
+```
+
+后台表单入口声明规则：
+
+```php
+MediaPicker::make('cert_photos')->uploadRule('nurse-cert')->multiple()
+```
+
+声明后：
+
+- **服务端强制**：`check`（秒传）/ `sign`（签名）/ `upload`（local 中转）/ `callback`（建档）
+  全链路按规则校验类型与大小，绕开前端直接调接口同样 422；local 中转与浏览器直传对同一
+  入口执行同一套规则（rule 随签名字段透传）。API 调用方在各端点传 `rule` 参数即可。
+- **前端选择行为同步约束**：`accept` 类型过滤在文件选择阶段生效、单文件大小上限按规则收紧。
+- **未声明规则的入口沿用全局限制**，存量表单行为完全不变。
+
+访问行为（`cache_seconds` / `disposition`）随入口生效：
+
+```php
+$media->url();                      // 默认公开 URL
+$media->urlForEntry('doc-preview'); // 预览入口：inline + 缓存
+$media->urlForEntry('export');      // 下载入口：attachment + 原始文件名（非对象名）
+```
+
+注意 `urlForEntry` 的实际效果因驱动而异：**云驱动（TOS/OSS/COS）下它返回的 URL
+与 `url()` 完全相同**——访问行为已在上传时写入对象元数据，公开 URL 天然携带对应行为，
+此处只起"声明这是哪个入口的链接"的语义作用；**只有 local 驱动才会真正改变 URL**
+（改走 file 路由由服务端输出响应头）。写业务代码时仍建议用 `urlForEntry` 表达场景，
+local（开发）与云（生产）环境差异由方法内部抹平。
+
+实现说明：访问行为在**上传时写入对象元数据**（`Content-Disposition` / `Cache-Control`），
+且 `disposition` 纳入去重维度——同一内容按 inline / attachment / 无各存一个对象
+（key 形如 `{hash前2位}/{hash}.inline.pdf`），各自元数据正确、互不干扰；`cache_seconds`
+不纳入去重（同内容多入口时以先上传者为准）。attachment 的文件名取自上传时的原始文件名
+（RFC 5987 编码，中文名兼容），同样**先到先得**：同一内容被不同文件名的上传去重命中时，
+下载拿到的是第一个上传者的文件名。云厂商 response-* URL 期覆盖实测不可靠
+（TOS 匿名 GET 带 `response-*` 参数返回 400），本模块不依赖该机制；local 驱动经
+`GET /{route_prefix}/file/{media}?rule=名` 由服务端输出对应响应头（该路由默认仅 `web`
+中间件、文件按公开可读设计，收口用 `cmf-media.file_middleware` 配置）。
+
+**inline 预览需要自定义访问域名**：TOS/OSS/COS 的默认 bucket 域名出于安全策略对 GET
+强制返回 `attachment`（对象元数据也救不了），需绑定自定义域名并配置
+`disks.{driver}.url`（如 `TOS_URL`）后 `inline` 才生效；`attachment`（含下载文件名）
+在默认域名下即可生效。
 
 ## RichEditor 富文本接管
 
@@ -170,6 +246,7 @@ Media 模型切换为可审计的 `AuditableMedia`。
 3. 500MB 上限文件算 hash 期间：内存占用不随文件大小增长、页面可正常交互、进度条持续推进；
 4. 云控制台确认对象 key 为 hash 路径。
 5. Filament Action / Modal **弹窗内**的 picker 同样能选文件（弹窗内容由 Alpine 挂载、不触发 Livewire 的 morph 钩子，故视图用 `x-init` 调用 `window.cmfMediaPickerInit` 初始化）。
+6. 配了入口规则时：声明规则的入口超限文件被直传/中转同时拒绝（422），文件选择框按 accept 过滤；`$media->urlForEntry('规则名')` 的预览/下载/缓存行为符合规则，未声明规则的入口与升级前一致。
 
 ## 测试
 

@@ -25,25 +25,16 @@ class MediaUploader
      *
      * @param  string|null  $clientHash  客户端上报 hash（浏览器直传场景防伪校验）；null 表示无上报
      * @param  string|null  $originalName  覆盖原始文件名（默认取上传文件的客户端文件名）
+     * @param  UploadRule|null  $rule  入口上传规则（cmf-media.rules）；null 沿用全局限制
      */
-    public function store(UploadedFile $file, ?string $clientHash = null, ?string $originalName = null, int|string|null $uploaderId = null): Media
+    public function store(UploadedFile $file, ?string $clientHash = null, ?string $originalName = null, int|string|null $uploaderId = null, ?UploadRule $rule = null): Media
     {
         $size = (int) $file->getSize();
-
-        if ($size < 1 || $size > (int) config('cmf-media.max_size')) {
-            throw ValidationException::withMessages([
-                'size' => '文件超过大小上限 '.((int) config('cmf-media.max_size') / 1024 / 1024).'MB',
-            ]);
-        }
 
         // MIME 以服务端探测为准，客户端上报不可信
         $mime = $file->getMimeType() ?: 'application/octet-stream';
 
-        if (! MediaManager::mimeAllowed($mime)) {
-            throw ValidationException::withMessages([
-                'mime' => '不允许的文件类型：'.$mime,
-            ]);
-        }
+        UploadRule::validateUpload($rule, $mime, $size);
 
         // Livewire 临时盘配置为云盘时 realPath 非本地文件，退化为按内容计算
         $realPath = $file->getRealPath();
@@ -62,7 +53,8 @@ class MediaUploader
 
         $name = $originalName ?? $file->getClientOriginalName();
         $ext = MediaManager::safeExtension($name);
-        $key = Media::objectKey($hash, $ext);
+        $disposition = $rule?->disposition ?? '';
+        $key = Media::objectKey($hash, $ext, $disposition);
         $driver = MediaManager::driver();
         $disk = Storage::disk(Media::diskName($driver));
 
@@ -99,22 +91,26 @@ class MediaUploader
             'size' => $size,
             'width' => $width,
             'height' => $height,
-        ], $ext, $uploaderId);
+        ], $ext, $uploaderId, $disposition);
     }
 
     /**
-     * 按 hash 建档：已有记录（含软删）直接复用并恢复；唯一索引兜底并发重复建档。
+     * 按 hash + disposition 建档：已有记录（含软删）直接复用并恢复；
+     * 唯一索引兜底并发重复建档。
      *
      * @param  array{hash: string, name: string, mime: string, size: int, width?: int|null, height?: int|null}  $data
      */
-    public function firstOrCreate(string $driver, string $key, array $data, string $ext, int|string|null $uploaderId): Media
+    public function firstOrCreate(string $driver, string $key, array $data, string $ext, int|string|null $uploaderId, string $disposition = ''): Media
     {
         /** @var class-string<Media> $model */
         $model = config('cmf-media.model', Media::class);
 
-        // 含软删记录：同 hash 重复上传直接复用并恢复
+        // 含软删记录：同 hash + disposition 重复上传直接复用并恢复
         /** @var Media|null $existing */
-        $existing = $model::withTrashed()->where('hash', $data['hash'])->first();
+        $existing = $model::withTrashed()
+            ->where('hash', $data['hash'])
+            ->where('disposition', $disposition)
+            ->first();
 
         if ($existing instanceof Media) {
             if ($existing->trashed()) {
@@ -128,6 +124,7 @@ class MediaUploader
             /** @var Media $media */
             $media = $model::create([
                 'hash' => $data['hash'],
+                'disposition' => $disposition,
                 'disk' => $driver,
                 'path' => $key,
                 'original_name' => $data['name'],
@@ -141,7 +138,10 @@ class MediaUploader
         } catch (QueryException) {
             // 并发重复建档撞唯一索引：改查已有记录
             /** @var Media $media */
-            $media = $model::withTrashed()->where('hash', $data['hash'])->firstOrFail();
+            $media = $model::withTrashed()
+                ->where('hash', $data['hash'])
+                ->where('disposition', $disposition)
+                ->firstOrFail();
         }
 
         if ($media->trashed()) {

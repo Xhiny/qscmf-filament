@@ -85,7 +85,17 @@ class MediaManager
         /** @var list<string> $allowed */
         $allowed = config('cmf-media.allowed_mimes', []);
 
-        foreach ($allowed as $pattern) {
+        return static::mimeMatches($mime, $allowed);
+    }
+
+    /**
+     * MIME 是否命中给定白名单（支持 "image/*" 通配）。
+     *
+     * @param  list<string>  $patterns
+     */
+    public static function mimeMatches(string $mime, array $patterns): bool
+    {
+        foreach ($patterns as $pattern) {
             if ($pattern === $mime) {
                 return true;
             }

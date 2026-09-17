@@ -16,17 +16,23 @@ use Quansitech\Cmf\Media\Contracts\DirectUploadSigner;
  */
 class TosSigner implements DirectUploadSigner
 {
-    public function signUpload(string $key, string $mime, int $size, array $config): array
+    public function signUpload(string $key, string $mime, int $size, array $config, array $options = []): array
     {
         $expires = (int) config('cmf-media.sign_expires', 600);
+
+        // Content-Disposition / Cache-Control 作为未签名请求头随 PUT 写入对象元数据
+        // （SignedHeaders 仅 host，SigV4 允许额外的未签名头；TOS 已实测写入生效）
+        $headers = array_filter([
+            'Content-Type' => $mime,
+            'Content-Disposition' => $options['disposition'] ?? null,
+            'Cache-Control' => $options['cache_control'] ?? null,
+        ]);
 
         return [
             'method' => 'PUT',
             'upload_url' => $this->signUrl('PUT', $key, $config, $expires),
             'fields' => [],
-            'headers' => [
-                'Content-Type' => $mime,
-            ],
+            'headers' => $headers,
             'expires' => $expires,
         ];
     }

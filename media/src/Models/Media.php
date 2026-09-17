@@ -12,6 +12,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Storage;
 use Quansitech\Cmf\Media\Jobs\DeleteMediaJob;
+use Quansitech\Cmf\Media\Support\UploadRule;
 use Throwable;
 
 /**
@@ -20,8 +21,9 @@ use Throwable;
  *
  * @property int $id
  * @property string $disk 存储驱动：tos / oss / cos / local
- * @property string $path 对象 key：{hash前2位}/{hash}.{ext}
+ * @property string $path 对象 key：{hash前2位}/{hash}[.{disposition}].{ext}
  * @property string $hash 文件内容 MD5
+ * @property string $disposition 访问行为（inline / attachment / 空=无），去重维度之一
  * @property string $original_name
  * @property string $mime
  * @property string $ext
@@ -41,7 +43,7 @@ class Media extends Model
     protected $table = 'cmf_media';
 
     /** @var list<string> */
-    protected $fillable = ['disk', 'path', 'hash', 'original_name', 'mime', 'ext', 'size', 'width', 'height', 'uploader_id', 'ref_count'];
+    protected $fillable = ['disk', 'path', 'hash', 'disposition', 'original_name', 'mime', 'ext', 'size', 'width', 'height', 'uploader_id', 'ref_count'];
 
     protected static function booted(): void
     {
@@ -73,11 +75,17 @@ class Media extends Model
     }
 
     /**
-     * 对象 key：{hash前2位}/{hash}.{ext}。
+     * 对象 key：{hash前2位}/{hash}[.{disposition}].{ext}。
+     *
+     * disposition（inline / attachment）参与 key 生成：同一内容按访问行为各存
+     * 一个对象，各自在上传时写入 Content-Disposition 元数据（云厂商 response-*
+     * URL 覆盖实测不可靠）。无 disposition 时保持原 key 格式，存量对象兼容。
      */
-    public static function objectKey(string $hash, string $ext): string
+    public static function objectKey(string $hash, string $ext, string $disposition = ''): string
     {
-        return substr($hash, 0, 2).'/'.$hash.($ext === '' ? '' : '.'.$ext);
+        return substr($hash, 0, 2).'/'.$hash
+            .($disposition === '' ? '' : '.'.$disposition)
+            .($ext === '' ? '' : '.'.$ext);
     }
 
     /**
@@ -131,6 +139,32 @@ class Media extends Model
                 return null;
             }
         }
+    }
+
+    /**
+     * 按入口规则（cmf-media.rules）生成访问 URL。
+     *
+     * 访问行为（缓存时长 / 预览或下载 / 下载文件名）已在上传时写入对象元数据
+     * （disposition 同时是去重维度，不同入口各存各的对象），云驱动直接返回
+     * 公开 URL 即可——不再拼 response-* 覆盖参数（TOS 实测匿名 GET 带
+     * response-* 参数返回 400，且默认域名投递层强制 attachment）。
+     * local 驱动仍走 cmf-media.file 路由，由服务端输出对应响应头。
+     *
+     * 规则为空或未声明访问行为时与 url() 完全一致（存量行为不变）。
+     */
+    public function urlForEntry(?string $rule, int $ttl = 600): ?string
+    {
+        $uploadRule = UploadRule::find($rule);
+
+        if (! $uploadRule instanceof UploadRule || ! $uploadRule->hasAccessBehavior()) {
+            return $this->url($ttl);
+        }
+
+        if ($this->disk === 'local') {
+            return route('cmf-media.file', ['media' => $this->id, 'rule' => $uploadRule->name]);
+        }
+
+        return $this->url($ttl);
     }
 
     /**

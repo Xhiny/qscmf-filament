@@ -16,17 +16,23 @@ use Quansitech\Cmf\Media\Contracts\DirectUploadSigner;
  */
 class CosSigner implements DirectUploadSigner
 {
-    public function signUpload(string $key, string $mime, int $size, array $config): array
+    public function signUpload(string $key, string $mime, int $size, array $config, array $options = []): array
     {
         $expires = (int) config('cmf-media.sign_expires', 600);
+
+        // Content-Disposition / Cache-Control 随 PUT 写入对象元数据；q-header-list
+        // 为空即不签任何请求头（现状 Content-Type 也未签名且工作正常），直接附加即可
+        $headers = array_filter([
+            'Content-Type' => $mime,
+            'Content-Disposition' => $options['disposition'] ?? null,
+            'Cache-Control' => $options['cache_control'] ?? null,
+        ]);
 
         return [
             'method' => 'PUT',
             'upload_url' => $this->signUrl('PUT', $key, $config, $expires),
             'fields' => [],
-            'headers' => [
-                'Content-Type' => $mime,
-            ],
+            'headers' => $headers,
             'expires' => $expires,
         ];
     }

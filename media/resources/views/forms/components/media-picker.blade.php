@@ -2,6 +2,7 @@
     /** @var \Quansitech\Cmf\Media\Filament\Forms\Components\MediaPicker $field */
     $selected = $getSelectedMedia();
     $statePath = $getStatePath();
+    $uploadRule = $getUploadRule();
 @endphp
 
 <x-dynamic-component :component="$getFieldWrapperView()" :field="$field">
@@ -18,16 +19,27 @@
         data-library-url="{{ route('cmf-media.library') }}"
         data-worker-url="{{ \Filament\Support\Facades\FilamentAsset::getScriptSrc('cmf-media-hash-worker', 'quansitech/cmf-module-media') }}"
         data-spark-url="{{ \Filament\Support\Facades\FilamentAsset::getScriptSrc('cmf-media-spark-md5', 'quansitech/cmf-module-media') }}"
-        data-max-size="{{ (int) config('cmf-media.max_size') }}"
+        data-max-size="{{ $uploadRule?->maxSize ?? (int) config('cmf-media.max_size') }}"
+        @if ($uploadRule)
+            data-rule="{{ $uploadRule->name }}"
+        @endif
     >
         <div class="flex items-center gap-2">
             <label class="fi-btn fi-btn-color-gray fi-btn-size-sm inline-flex cursor-pointer items-center rounded-lg border border-gray-300 px-3 py-1.5 text-sm dark:border-gray-600">
                 <span data-cmf-media-upload-label>选择文件上传</span>
-                <input type="file" class="hidden" data-cmf-media-input @if($isMultiple()) multiple @endif />
+                <input
+                    type="file"
+                    class="hidden"
+                    data-cmf-media-input
+                    @if($isMultiple()) multiple @endif
+                    @if($uploadRule && $uploadRule->acceptAttribute() !== '') accept="{{ $uploadRule->acceptAttribute() }}" @endif
+                />
             </label>
-            <button type="button" data-cmf-media-library-btn class="fi-btn fi-btn-color-gray fi-btn-size-sm inline-flex items-center rounded-lg border border-gray-300 px-3 py-1.5 text-sm dark:border-gray-600">
-                从媒体库选择
-            </button>
+            @if ($field->canOpenLibrary())
+                <button type="button" data-cmf-media-library-btn class="fi-btn fi-btn-color-gray fi-btn-size-sm inline-flex items-center rounded-lg border border-gray-300 px-3 py-1.5 text-sm dark:border-gray-600">
+                    从媒体库选择
+                </button>
+            @endif
         </div>
 
         <div class="mt-2 hidden" data-cmf-media-progress-wrap>
@@ -41,7 +53,11 @@
 
         <ul class="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4" data-cmf-media-items>
             @foreach ($selected as $media)
-                <li class="relative rounded-lg border border-gray-200 p-2 text-xs dark:border-gray-700" data-cmf-media-id="{{ $media->id }}">
+                <li class="relative cursor-pointer rounded-lg border border-gray-200 p-2 text-xs dark:border-gray-700"
+                    data-cmf-media-id="{{ $media->id }}"
+                    data-cmf-media-url="{{ $media->url() }}"
+                    data-cmf-media-mime="{{ $media->mime }}"
+                    data-cmf-media-name="{{ $media->original_name }}">
                     @if ($media->thumbUrl())
                         <img src="{{ $media->thumbUrl() }}" alt="{{ $media->original_name }}" class="mb-1 h-16 w-full rounded object-cover" />
                     @endif
@@ -51,14 +67,27 @@
             @endforeach
         </ul>
 
-        <div class="fixed inset-0 z-40 hidden items-center justify-center bg-gray-950/50" data-cmf-media-modal>
-            <div class="max-h-[80vh] w-full max-w-3xl overflow-auto rounded-xl bg-white p-4 dark:bg-gray-900">
-                <div class="mb-3 flex items-center justify-between">
-                    <h3 class="text-sm font-medium">媒体库</h3>
-                    <button type="button" data-cmf-media-modal-close class="text-gray-400 hover:text-gray-600">×</button>
+        {{-- 预览/播放/下载弹窗：点击图片预览、视频音频播放、其他类型提供下载链接 --}}
+        <div class="fixed inset-0 z-40 hidden items-center justify-center bg-gray-950/50" data-cmf-media-preview-modal>
+            <div class="max-h-[85vh] w-full max-w-3xl overflow-auto rounded-xl bg-white p-4 dark:bg-gray-900">
+                <div class="mb-3 flex items-center justify-between gap-3">
+                    <h3 class="truncate text-sm font-medium" data-cmf-media-preview-title></h3>
+                    <button type="button" data-cmf-media-preview-close class="shrink-0 text-gray-400 hover:text-gray-600">×</button>
                 </div>
-                <ul class="grid grid-cols-3 gap-3 sm:grid-cols-6" data-cmf-media-library-list></ul>
+                <div data-cmf-media-preview-body></div>
             </div>
         </div>
+
+        @if ($field->canOpenLibrary())
+            <div class="fixed inset-0 z-40 hidden items-center justify-center bg-gray-950/50" data-cmf-media-modal>
+                <div class="max-h-[80vh] w-full max-w-3xl overflow-auto rounded-xl bg-white p-4 dark:bg-gray-900">
+                    <div class="mb-3 flex items-center justify-between">
+                        <h3 class="text-sm font-medium">媒体库</h3>
+                        <button type="button" data-cmf-media-modal-close class="text-gray-400 hover:text-gray-600">×</button>
+                    </div>
+                    <ul class="grid grid-cols-3 gap-3 sm:grid-cols-6" data-cmf-media-library-list></ul>
+                </div>
+            </div>
+        @endif
     </div>
 </x-dynamic-component>

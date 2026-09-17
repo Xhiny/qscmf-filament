@@ -14,6 +14,7 @@ use Quansitech\Cmf\Media\Contracts\ObjectInspector;
 use Quansitech\Cmf\Media\Models\Media;
 use Quansitech\Cmf\Media\Support\MediaManager;
 use Quansitech\Cmf\Media\Support\MediaUploader;
+use Quansitech\Cmf\Media\Support\UploadRule;
 
 /**
  * 浏览器直传三端点：check（查重秒传）/ sign（签发凭证）/ callback（建档），
@@ -25,21 +26,31 @@ class MediaUploadController extends Controller
 
     /**
      * 查重：命中（含软删记录）直接返回已有 media（秒传），未命中 404。
+     * 声明了入口规则时秒传同样受规则约束（不改客户端参数绕不过）。
      */
     public function check(Request $request): JsonResponse
     {
         $model = $this->model();
         Gate::authorize('viewAny', $model);
 
-        /** @var array{hash: string, size: int, mime: string} $data */
+        /** @var array{hash: string, size: int, mime: string, rule?: string|null} $data */
         $data = $request->validate([
             'hash' => ['required', 'string', 'size:32'],
             'size' => ['required', 'integer', 'min:0'],
             'mime' => ['required', 'string', 'max:100'],
+            'rule' => ['nullable', 'string', 'max:50'],
         ]);
 
+        // 未声明规则的入口保持原样（check 历史上不校验类型/大小），不影响存量
+        if ($rule = UploadRule::fromRequest($data['rule'] ?? null)) {
+            UploadRule::validateUpload($rule, $data['mime'], max(1, (int) $data['size']));
+        }
+
         /** @var Media|null $media */
-        $media = $model::withTrashed()->where('hash', $data['hash'])->first();
+        $media = $model::withTrashed()
+            ->where('hash', $data['hash'])
+            ->where('disposition', $rule?->disposition ?? '')
+            ->first();
 
         if (! $media instanceof Media) {
             return response()->json(['message' => '未命中'], 404);
@@ -54,43 +65,43 @@ class MediaUploadController extends Controller
     }
 
     /**
-     * 签发直传凭证：校验 mime/大小白名单，对象 key 固定为 {hash前2位}/{hash}.{ext}。
+     * 签发直传凭证：按入口规则（未声明则全局）校验 mime/大小，对象 key 为
+     * {hash前2位}/{hash}[.{disposition}].{ext}，访问行为头随凭证一并下发。
      */
     public function sign(Request $request): JsonResponse
     {
         $model = $this->model();
         Gate::authorize('create', $model);
 
-        /** @var array{hash: string, name: string, mime: string, size: int} $data */
+        /** @var array{hash: string, name: string, mime: string, size: int, rule?: string|null} $data */
         $data = $request->validate([
             'hash' => ['required', 'string', 'size:32'],
             'name' => ['required', 'string', 'max:255'],
             'mime' => ['required', 'string', 'max:100'],
             'size' => ['required', 'integer', 'min:1'],
+            'rule' => ['nullable', 'string', 'max:50'],
         ]);
 
-        if ($data['size'] > (int) config('cmf-media.max_size')) {
-            throw ValidationException::withMessages([
-                'size' => '文件超过大小上限 '.((int) config('cmf-media.max_size') / 1024 / 1024).'MB',
-            ]);
-        }
-
-        if (! MediaManager::mimeAllowed($data['mime'])) {
-            throw ValidationException::withMessages([
-                'mime' => '不允许的文件类型：'.$data['mime'],
-            ]);
-        }
+        // 服务端强制：绕过前端直接调接口同样按入口规则拒绝
+        $rule = UploadRule::fromRequest($data['rule'] ?? null);
+        UploadRule::validateUpload($rule, $data['mime'], (int) $data['size']);
 
         $ext = MediaManager::safeExtension($data['name']);
-        $key = Media::objectKey($data['hash'], $ext);
+        // disposition 参与对象 key：同一内容按访问行为各存一个对象（去重维度）
+        $key = Media::objectKey($data['hash'], $ext, $rule?->disposition ?? '');
         $driver = MediaManager::driver();
 
-        // local：无需云签名，直传应用服务器的 upload 端点（POST multipart）
+        // local：无需云签名，直传应用服务器的 upload 端点（POST multipart）；
+        // rule 随表单字段透传，中转上传与直传执行同一套入口规则
         if (MediaManager::isLocal($driver)) {
             return response()->json([
                 'method' => 'POST',
                 'upload_url' => route('cmf-media.upload'),
-                'fields' => ['hash' => $data['hash'], 'name' => $data['name']],
+                'fields' => array_filter([
+                    'hash' => $data['hash'],
+                    'name' => $data['name'],
+                    'rule' => $rule?->name,
+                ]),
                 'headers' => ['X-CSRF-TOKEN' => csrf_token(), 'Accept' => 'application/json'],
                 'expires' => 0,
                 'path' => $key,
@@ -99,8 +110,13 @@ class MediaUploadController extends Controller
             ]);
         }
 
+        // 访问行为（预览或下载 / 缓存时长）随上传写入对象元数据：
+        // 云厂商 response-* URL 覆盖实测不可靠（TOS 匿名 GET 直接 400）
         $credential = MediaManager::signer($driver)
-            ->signUpload($key, $data['mime'], (int) $data['size'], MediaManager::diskConfig($driver));
+            ->signUpload($key, $data['mime'], (int) $data['size'], MediaManager::diskConfig($driver), [
+                'disposition' => $rule?->contentDispositionForName($data['name']),
+                'cache_control' => $rule?->cacheControl(),
+            ]);
 
         return response()->json([...$credential, 'path' => $key, 'disk' => $driver]);
     }
@@ -119,11 +135,12 @@ class MediaUploadController extends Controller
             abort(404);
         }
 
-        /** @var array{hash: string, name: string} $data */
+        /** @var array{hash: string, name: string, rule?: string|null} $data */
         $data = $request->validate([
             'file' => ['required', 'file'],
             'hash' => ['required', 'string', 'size:32'],
             'name' => ['required', 'string', 'max:255'],
+            'rule' => ['nullable', 'string', 'max:50'],
         ]);
 
         $media = $uploader->store(
@@ -131,6 +148,7 @@ class MediaUploadController extends Controller
             clientHash: $data['hash'],
             originalName: $data['name'],
             uploaderId: $request->user()?->getAuthIdentifier(),
+            rule: UploadRule::fromRequest($data['rule'] ?? null),
         );
 
         return response()->json(['media' => $this->mediaJson($media)]);
@@ -145,7 +163,7 @@ class MediaUploadController extends Controller
         $model = $this->model();
         Gate::authorize('create', $model);
 
-        /** @var array{hash: string, path: string, name: string, mime: string, size: int, width?: int|null, height?: int|null} $data */
+        /** @var array{hash: string, path: string, name: string, mime: string, size: int, width?: int|null, height?: int|null, rule?: string|null} $data */
         $data = $request->validate([
             'hash' => ['required', 'string', 'size:32'],
             'path' => ['required', 'string', 'max:512'],
@@ -154,11 +172,16 @@ class MediaUploadController extends Controller
             'size' => ['required', 'integer', 'min:1'],
             'width' => ['nullable', 'integer', 'min:0'],
             'height' => ['nullable', 'integer', 'min:0'],
+            'rule' => ['nullable', 'string', 'max:50'],
         ]);
 
-        // 对象 key 由服务端规则生成，防止客户端伪造路径冒领他人文件
+        // 回调建档前再按入口规则校验一次（纵深防御；直传已在 sign 环节强制）
+        $rule = UploadRule::fromRequest($data['rule'] ?? null);
+        UploadRule::validateUpload($rule, $data['mime'], (int) $data['size']);
+
+        // 对象 key 由服务端规则生成（含 disposition 维度），防止客户端伪造路径冒领他人文件
         $ext = MediaManager::safeExtension($data['name']);
-        $expectedKey = Media::objectKey($data['hash'], $ext);
+        $expectedKey = Media::objectKey($data['hash'], $ext, $rule?->disposition ?? '');
 
         if ($data['path'] !== $expectedKey) {
             throw ValidationException::withMessages(['path' => '对象路径与内容哈希不符']);
@@ -182,7 +205,14 @@ class MediaUploadController extends Controller
             throw ValidationException::withMessages(['hash' => '云端对象指纹与上报哈希不符']);
         }
 
-        $media = $uploader->firstOrCreate($driver, $expectedKey, $data, $ext, $request->user()?->getAuthIdentifier());
+        $media = $uploader->firstOrCreate(
+            $driver,
+            $expectedKey,
+            $data,
+            $ext,
+            $request->user()?->getAuthIdentifier(),
+            $rule?->disposition ?? '',
+        );
 
         return response()->json(['media' => $this->mediaJson($media)]);
     }

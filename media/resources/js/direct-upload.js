@@ -18,6 +18,7 @@
         var statePath = el.dataset.statePath;
         var multiple = el.dataset.multiple === '1';
         var maxSize = parseInt(el.dataset.maxSize || '0', 10);
+        var rule = el.dataset.rule || '';
 
         var input = el.querySelector('[data-cmf-media-input]');
         var progressWrap = el.querySelector('[data-cmf-media-progress-wrap]');
@@ -28,6 +29,9 @@
         var modal = el.querySelector('[data-cmf-media-modal]');
         var libraryBtn = el.querySelector('[data-cmf-media-library-btn]');
         var libraryList = el.querySelector('[data-cmf-media-library-list]');
+        var previewModal = el.querySelector('[data-cmf-media-preview-modal]');
+        var previewTitle = el.querySelector('[data-cmf-media-preview-title]');
+        var previewBody = el.querySelector('[data-cmf-media-preview-body]');
 
         function setProgress(label, ratio) {
             progressWrap.classList.remove('hidden');
@@ -84,8 +88,11 @@
             }
 
             var li = document.createElement('li');
-            li.className = 'relative rounded-lg border border-gray-200 p-2 text-xs dark:border-gray-700';
+            li.className = 'relative cursor-pointer rounded-lg border border-gray-200 p-2 text-xs dark:border-gray-700';
             li.dataset.cmfMediaId = media.id;
+            li.dataset.cmfMediaUrl = media.url || '';
+            li.dataset.cmfMediaMime = media.mime || '';
+            li.dataset.cmfMediaName = media.original_name || '';
 
             if (media.thumb_url) {
                 var img = document.createElement('img');
@@ -123,6 +130,14 @@
         function csrfToken() {
             var meta = document.querySelector('meta[name="csrf-token"]');
             return meta ? meta.getAttribute('content') : '';
+        }
+
+        // 入口规则（cmf-media.rules）透传给服务端：check / sign / callback 全链路校验
+        function withRule(payload) {
+            if (rule) {
+                payload.rule = rule;
+            }
+            return payload;
         }
 
         function postJson(url, payload) {
@@ -230,7 +245,7 @@
             hashFile(file)
                 .then(function (h) {
                     hash = h;
-                    return postJson(el.dataset.checkUrl, { hash: hash, size: file.size, mime: file.type || 'application/octet-stream' })
+                    return postJson(el.dataset.checkUrl, withRule({ hash: hash, size: file.size, mime: file.type || 'application/octet-stream' }))
                         .then(function (res) { return { hit: true, media: res.media }; })
                         .catch(function (err) {
                             if (/未命中/.test(err.message)) {
@@ -246,12 +261,12 @@
                         return;
                     }
 
-                    return postJson(el.dataset.signUrl, {
+                    return postJson(el.dataset.signUrl, withRule({
                         hash: hash,
                         name: file.name,
                         mime: file.type || 'application/octet-stream',
                         size: file.size,
-                    })
+                    }))
                         .then(function (credential) {
                             path = credential.path;
                             isLocal = credential.local === true;
@@ -266,13 +281,13 @@
                             }
 
                             setProgress('正在登记…', 1);
-                            return postJson(el.dataset.callbackUrl, {
+                            return postJson(el.dataset.callbackUrl, withRule({
                                 hash: hash,
                                 path: path,
                                 name: file.name,
                                 mime: file.type || 'application/octet-stream',
                                 size: file.size,
-                            })
+                            }))
                                 .then(function (res) {
                                     hideProgress();
                                     acceptMedia(res.media);
@@ -290,56 +305,124 @@
             input.value = '';
         });
 
-        itemsList.addEventListener('click', function (event) {
-            var btn = event.target.closest('[data-cmf-media-remove]');
-            if (!btn) {
+        /**
+         * 预览/播放/下载弹窗：按 mime 分发——图片大图预览、视频音频内嵌播放、
+         * 其他类型给出新窗口下载链接（是否落盘由对象 Content-Disposition 元数据决定）。
+         */
+        function openPreview(url, mime, name) {
+            if (!url) {
                 return;
             }
-            var id = Number(btn.dataset.cmfMediaRemove);
-            writeIds(currentIds().filter(function (x) { return x !== id; }));
-            var li = itemsList.querySelector('[data-cmf-media-id="' + id + '"]');
-            if (li) {
-                li.remove();
+            previewTitle.textContent = name || '';
+            previewBody.innerHTML = '';
+
+            if (mime.indexOf('image/') === 0) {
+                var img = document.createElement('img');
+                img.src = url;
+                img.alt = name || '';
+                img.className = 'mx-auto max-h-[70vh] rounded';
+                previewBody.appendChild(img);
+            } else if (mime.indexOf('video/') === 0) {
+                var video = document.createElement('video');
+                video.src = url;
+                video.controls = true;
+                video.autoplay = true;
+                video.className = 'mx-auto max-h-[70vh] w-full rounded';
+                previewBody.appendChild(video);
+            } else if (mime.indexOf('audio/') === 0) {
+                var audio = document.createElement('audio');
+                audio.src = url;
+                audio.controls = true;
+                audio.autoplay = true;
+                audio.className = 'w-full';
+                previewBody.appendChild(audio);
+            } else {
+                var link = document.createElement('a');
+                link.href = url;
+                link.target = '_blank';
+                link.rel = 'noopener';
+                link.className = 'fi-btn fi-btn-color-gray fi-btn-size-sm inline-flex items-center rounded-lg border border-gray-300 px-3 py-1.5 text-sm dark:border-gray-600';
+                link.textContent = '下载 ' + (name || '文件');
+                previewBody.appendChild(link);
+            }
+
+            previewModal.classList.remove('hidden');
+            previewModal.classList.add('flex');
+        }
+
+        function closePreview() {
+            // 清空 body 以停止音视频播放
+            previewBody.innerHTML = '';
+            previewModal.classList.add('hidden');
+            previewModal.classList.remove('flex');
+        }
+
+        previewModal.querySelector('[data-cmf-media-preview-close]').addEventListener('click', closePreview);
+        previewModal.addEventListener('click', function (event) {
+            if (event.target === previewModal) {
+                closePreview();
             }
         });
 
-        libraryBtn.addEventListener('click', function () {
-            modal.classList.remove('hidden');
-            modal.classList.add('flex');
+        itemsList.addEventListener('click', function (event) {
+            var btn = event.target.closest('[data-cmf-media-remove]');
+            if (btn) {
+                var id = Number(btn.dataset.cmfMediaRemove);
+                writeIds(currentIds().filter(function (x) { return x !== id; }));
+                var li = itemsList.querySelector('[data-cmf-media-id="' + id + '"]');
+                if (li) {
+                    li.remove();
+                }
+                return;
+            }
 
-            fetch(el.dataset.libraryUrl, { headers: { 'Accept': 'application/json' } })
-                .then(function (res) { return res.json(); })
-                .then(function (res) {
-                    libraryList.innerHTML = '';
-                    (res.data || []).forEach(function (media) {
-                        var li = document.createElement('li');
-                        li.className = 'cursor-pointer rounded-lg border border-gray-200 p-2 text-xs hover:border-primary-500 dark:border-gray-700';
-                        if (media.thumb_url) {
-                            var img = document.createElement('img');
-                            img.src = media.thumb_url;
-                            img.alt = media.original_name;
-                            img.className = 'mb-1 h-16 w-full rounded object-cover';
-                            li.appendChild(img);
-                        }
-                        var name = document.createElement('div');
-                        name.className = 'truncate';
-                        name.title = media.original_name;
-                        name.textContent = media.original_name;
-                        li.appendChild(name);
-                        li.addEventListener('click', function () {
-                            acceptMedia(media);
-                            modal.classList.add('hidden');
-                            modal.classList.remove('flex');
+            var item = event.target.closest('[data-cmf-media-id]');
+            if (item) {
+                openPreview(item.dataset.cmfMediaUrl, item.dataset.cmfMediaMime || '', item.dataset.cmfMediaName || '');
+            }
+        });
+
+        // 「从媒体库选择」入口默认不渲染（cmf-media.picker_library 开关），
+        // 按钮缺失时跳过整段媒体库弹窗接线，避免 null 引用中断 picker 初始化
+        if (libraryBtn) {
+            libraryBtn.addEventListener('click', function () {
+                modal.classList.remove('hidden');
+                modal.classList.add('flex');
+
+                fetch(el.dataset.libraryUrl, { headers: { 'Accept': 'application/json' } })
+                    .then(function (res) { return res.json(); })
+                    .then(function (res) {
+                        libraryList.innerHTML = '';
+                        (res.data || []).forEach(function (media) {
+                            var li = document.createElement('li');
+                            li.className = 'cursor-pointer rounded-lg border border-gray-200 p-2 text-xs hover:border-primary-500 dark:border-gray-700';
+                            if (media.thumb_url) {
+                                var img = document.createElement('img');
+                                img.src = media.thumb_url;
+                                img.alt = media.original_name;
+                                img.className = 'mb-1 h-16 w-full rounded object-cover';
+                                li.appendChild(img);
+                            }
+                            var name = document.createElement('div');
+                            name.className = 'truncate';
+                            name.title = media.original_name;
+                            name.textContent = media.original_name;
+                            li.appendChild(name);
+                            li.addEventListener('click', function () {
+                                acceptMedia(media);
+                                modal.classList.add('hidden');
+                                modal.classList.remove('flex');
+                            });
+                            libraryList.appendChild(li);
                         });
-                        libraryList.appendChild(li);
                     });
-                });
-        });
+            });
 
-        modal.querySelector('[data-cmf-media-modal-close]').addEventListener('click', function () {
-            modal.classList.add('hidden');
-            modal.classList.remove('flex');
-        });
+            modal.querySelector('[data-cmf-media-modal-close]').addEventListener('click', function () {
+                modal.classList.add('hidden');
+                modal.classList.remove('flex');
+            });
+        }
     }
 
     function boot() {

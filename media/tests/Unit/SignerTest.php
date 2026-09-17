@@ -75,6 +75,26 @@ it('tos signer signs HEAD urls for server side verification', function () use ($
         ->and(parse_url($url, PHP_URL_PATH))->toBe('/ab/'.str_repeat('b', 32).'.png');
 });
 
+it('tos signer attaches access behavior headers as unsigned put headers （写入对象元数据）', function () use ($tosConfig): void {
+    $key = 'ab/'.str_repeat('a', 32).'.inline.pdf';
+
+    $result = (new TosSigner)->signUpload($key, 'application/pdf', 123, $tosConfig, [
+        'disposition' => 'inline',
+        'cache_control' => 'max-age=86400, public',
+    ]);
+
+    // SigV4 SignedHeaders 仅 host，Content-Disposition / Cache-Control 作为
+    // 未签名头随 PUT 写入对象元数据（TOS 已实测生效），不进签名
+    expect($result['headers'])->toBe([
+        'Content-Type' => 'application/pdf',
+        'Content-Disposition' => 'inline',
+        'Cache-Control' => 'max-age=86400, public',
+    ]);
+
+    parse_str((string) parse_url($result['upload_url'], PHP_URL_QUERY), $query);
+    expect($query['X-Amz-SignedHeaders'])->toBe('host');
+});
+
 it('oss signer issues a PostObject policy signature', function () use ($ossConfig): void {
     $key = 'cd/'.str_repeat('c', 32).'.png';
 
@@ -115,6 +135,32 @@ it('oss signer signs HEAD urls with query string signature', function () use ($o
     expect($query['Signature'])->toBe($expected);
 });
 
+it('oss signer puts access behavior into post fields and policy conditions （否则 403）', function () use ($ossConfig): void {
+    $key = 'cd/'.str_repeat('c', 32).'.attachment.zip';
+    $disposition = "attachment; filename=\"export.zip\"; filename*=UTF-8''".rawurlencode('导出.zip');
+
+    $result = (new OssSigner)->signUpload($key, 'application/zip', 456, $ossConfig, [
+        'disposition' => $disposition,
+        'cache_control' => 'max-age=3600, public',
+    ]);
+
+    // PostObject：元数据头必须是表单字段
+    expect($result['fields']['Content-Disposition'])->toBe($disposition)
+        ->and($result['fields']['Cache-Control'])->toBe('max-age=3600, public');
+
+    // 且必须与 policy conditions 严格一致
+    $decoded = json_decode(base64_decode($result['fields']['policy'], true), true);
+    expect($decoded['conditions'])->toContain(['eq', '$Content-Disposition', $disposition])
+        ->and($decoded['conditions'])->toContain(['eq', '$Cache-Control', 'max-age=3600, public'])
+        ->and($decoded['conditions'])->toContain(['eq', '$key', $key]);
+
+    // 无 options 时 policy 不含元数据条件（存量行为不变）
+    $plain = (new OssSigner)->signUpload($key, 'application/zip', 456, $ossConfig);
+    $plainPolicy = json_decode(base64_decode($plain['fields']['policy'], true), true);
+    expect($plain['fields'])->not->toHaveKey('Content-Disposition')
+        ->and($plainPolicy['conditions'])->toHaveCount(4);
+});
+
 it('cos signer issues a presigned PUT with q-sign-algorithm', function () use ($cosConfig): void {
     $key = 'ef/'.str_repeat('e', 32).'.webp';
 
@@ -145,4 +191,17 @@ it('cos signer signs HEAD urls for server side verification', function () use ($
     $url = (new CosSigner)->signUrl('HEAD', 'ab/'.str_repeat('f', 32).'.png', $cosConfig, 600);
 
     expect($url)->toContain('q-signature=');
+});
+
+it('cos signer attaches access behavior headers as unsigned put headers', function () use ($cosConfig): void {
+    $key = 'ef/'.str_repeat('e', 32).'.inline.pdf';
+
+    $result = (new CosSigner)->signUpload($key, 'application/pdf', 789, $cosConfig, [
+        'disposition' => 'inline',
+    ]);
+
+    expect($result['headers'])->toBe([
+        'Content-Type' => 'application/pdf',
+        'Content-Disposition' => 'inline',
+    ]);
 });

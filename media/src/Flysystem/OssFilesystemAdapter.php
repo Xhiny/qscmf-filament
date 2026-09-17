@@ -19,6 +19,14 @@ class OssFilesystemAdapter extends FilesystemAdapter
 {
     public function url($path): string
     {
+        // 配置了自定义域名（如绑定了 CDN / 自定义访问域名）时优先生成对应 URL
+        if (isset($this->config['url'])) {
+            /** @var string $url */
+            $url = $this->config['url'];
+
+            return $this->concatPathToUrl($url, $this->prefixer->prefixPath($path));
+        }
+
         /** @var string $endpoint */
         $endpoint = $this->config['endpoint'] ?? 'oss-cn-hangzhou.aliyuncs.com';
         /** @var string $bucket */

@@ -14,7 +14,7 @@ use Quansitech\Cmf\Media\Contracts\DirectUploadSigner;
  */
 class OssSigner implements DirectUploadSigner
 {
-    public function signUpload(string $key, string $mime, int $size, array $config): array
+    public function signUpload(string $key, string $mime, int $size, array $config, array $options = []): array
     {
         $expires = (int) config('cmf-media.sign_expires', 600);
 
@@ -29,14 +29,29 @@ class OssSigner implements DirectUploadSigner
 
         $expiration = gmdate('Y-m-d\TH:i:s.000\Z', time() + $expires);
 
+        // Content-Disposition / Cache-Control 写入对象元数据：PostObject 下必须是
+        // 表单字段且必须出现在 policy conditions（eq 精确匹配），否则 403
+        // InvalidPolicyDocument；字段值与条件值必须严格一致
+        $metaHeaders = array_filter([
+            'Content-Disposition' => $options['disposition'] ?? null,
+            'Cache-Control' => $options['cache_control'] ?? null,
+        ]);
+
+        $conditions = [
+            ['bucket' => $bucket],
+            ['eq', '$key', $key],
+            ['eq', '$Content-Type', $mime],
+        ];
+
+        foreach ($metaHeaders as $header => $value) {
+            $conditions[] = ['eq', '$'.$header, $value];
+        }
+
+        $conditions[] = ['content-length-range', $size, $size];
+
         $policy = base64_encode(json_encode([
             'expiration' => $expiration,
-            'conditions' => [
-                ['bucket' => $bucket],
-                ['eq', '$key', $key],
-                ['eq', '$Content-Type', $mime],
-                ['content-length-range', $size, $size],
-            ],
+            'conditions' => $conditions,
         ], JSON_THROW_ON_ERROR));
 
         return [
@@ -48,6 +63,7 @@ class OssSigner implements DirectUploadSigner
                 'OSSAccessKeyId' => $accessKey,
                 'Signature' => $this->policySignature($policy, $secret),
                 'Content-Type' => $mime,
+                ...$metaHeaders,
                 'success_action_status' => '200',
             ],
             'headers' => [],
