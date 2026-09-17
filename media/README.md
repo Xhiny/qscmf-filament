@@ -8,6 +8,7 @@ QS CMF 媒体模块：浏览器直传 TOS / OSS / COS（可选 local 本地磁�
 - **内容哈希去重（秒传）**：同一内容全站只存一份对象，重复上传直接复用已有 media 记录
 - **local 本地驱动**：`CMF_MEDIA_DRIVER=local`，文件落服务器磁盘，去重与引用逻辑与云驱动一致，适合单机 / 内网场景
 - **按入口上传规则**：不同表单入口可声明各自的类型 / 大小限制与访问行为（预览或下载），服务端全链路强制
+- **选图前裁剪（可选）**：字段声明比例后，图片在浏览器里按该比例裁好再上传，裁剪先于内容指纹计算
 - **引用计数**：业务模型按字段引用媒体，归零自动软删并延迟清理云端对象
 - **RichEditor 接管**：富文本图片 / 附件自动接入媒体库（去重 + 引用闭环）
 - **后台管理**：媒体列表 / 详情预览 / 引用明细 / 有引用禁删，Shield 权限点自动登记
@@ -109,6 +110,22 @@ class CreatePost extends CreateRecord
 // config/cmf-media.php
 'picker_library' => true,
 ```
+
+选图前裁剪（可选）：字段声明比例后，选中的图片先在本机弹出的裁剪层里裁好再进入上传
+链路。裁剪发生在计算内容指纹之前，因此秒传去重与回调校验都基于裁剪后的文件；比例只是
+前端体验约束，服务端不校验。
+
+```php
+MediaPicker::make('cover')
+    ->cropAspectRatio('4:3')   // '4:3' / '4/3' / '1.5' / 1.5，或闭包按 $record 动态取值
+    ->cropMaxWidth(1600);      // 可选，裁剪产物像素宽上限，超出等比缩小
+```
+
+- PNG 保持 PNG（留住透明通道），其余格式转 JPEG 并以白色铺底；
+- GIF / SVG 不裁剪直接上传；未配置比例时行为与之前完全一致；
+- 用户在裁剪层点「取消」则该文件不上传，其余待上传文件继续；
+- 裁剪层异常时退回原文件，仅在控制台 warn，不阻断上传；
+- 输出质量与宽度上限见 `cmf-media.crop` 配置（`CMF_MEDIA_CROP_MAX_WIDTH` / `CMF_MEDIA_CROP_QUALITY`）。
 
 ### 3. 读取与展示
 
@@ -244,6 +261,8 @@ Media 模型切换为可审计的 `AuditableMedia`。
 3. 云控制台确认对象已写入（key 为 hash 路径）；
 4. 配了入口规则时：超限文件被拒绝（422）、文件选择框按 accept 过滤；
    `$media->urlForEntry('规则名')` 的预览 / 下载行为符合规则，未声明规则的入口与升级前一致。
+5. 配了 `cropAspectRatio()` 的字段选图后弹出裁剪层，裁剪框比例锁定、输出图尺寸符合预期；
+   多选连续选图时裁剪层逐个弹出、不互相覆盖，裁剪后再传同一张图走秒传。
 
 ## 测试
 
@@ -260,4 +279,5 @@ vendor/bin/pest
 - 对象 key 规则、URL 生成、软删排期逻辑：`src/Models/Media.php`
 - 上传链路（check / sign / upload / callback）与回调防伪：`src/Http/Controllers/MediaUploadController.php`
 - 入口规则解析与校验：`src/Support/UploadRule.php`
+- 选图前裁剪（比例解析、输出格式、异常回退）：`src/Filament/Forms/Components/MediaPicker.php`、`resources/js/crop.js`
 - 各云厂商签名实现：`src/Signers/`

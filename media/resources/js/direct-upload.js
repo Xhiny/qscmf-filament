@@ -20,6 +20,14 @@
         var maxSize = parseInt(el.dataset.maxSize || '0', 10);
         var rule = el.dataset.rule || '';
 
+        var cropOptions = el.dataset.cropAspectRatio
+            ? {
+                aspectRatio: parseFloat(el.dataset.cropAspectRatio),
+                maxWidth: parseInt(el.dataset.cropMaxWidth || '0', 10),
+                quality: parseFloat(el.dataset.cropQuality || '0') || undefined,
+            }
+            : null;
+
         var input = el.querySelector('[data-cmf-media-input]');
         var progressWrap = el.querySelector('[data-cmf-media-progress-wrap]');
         var progressBar = el.querySelector('[data-cmf-media-progress-bar]');
@@ -231,18 +239,48 @@
             });
         }
 
+        /**
+         * 字段声明了裁剪比例时，先让用户在裁剪层里定好范围。
+         *
+         * 必须在算 hash 之前裁完：callback 会比对云端 ETag 与这里上报的 hash，
+         * 裁完再传才能保证两者一致，秒传命中的也是裁剪后的内容。
+         */
+        function cropIfNeeded(file) {
+            if (!cropOptions || typeof window.cmfMediaCropFile !== 'function') {
+                return Promise.resolve(file);
+            }
+
+            return window.cmfMediaCropFile(file, cropOptions);
+        }
+
         function handleFile(file) {
             clearError();
 
-            if (maxSize && file.size > maxSize) {
-                showError('文件超过大小上限 ' + Math.round(maxSize / 1024 / 1024) + 'MB');
-                return;
-            }
+            return cropIfNeeded(file)
+                .then(function (ready) {
+                    // 用户在裁剪层取消，放弃这张
+                    if (!ready) {
+                        return;
+                    }
 
+                    if (maxSize && ready.size > maxSize) {
+                        showError('文件超过大小上限 ' + Math.round(maxSize / 1024 / 1024) + 'MB');
+                        return;
+                    }
+
+                    return uploadFile(ready);
+                })
+                .catch(function (err) {
+                    hideProgress();
+                    showError(err.message || '上传失败');
+                });
+        }
+
+        function uploadFile(file) {
             var hash;
             var path;
             var isLocal = false;
-            hashFile(file)
+            return hashFile(file)
                 .then(function (h) {
                     hash = h;
                     return postJson(el.dataset.checkUrl, withRule({ hash: hash, size: file.size, mime: file.type || 'application/octet-stream' }))
@@ -293,16 +331,26 @@
                                     acceptMedia(res.media);
                                 });
                         });
-                })
-                .catch(function (err) {
-                    hideProgress();
-                    showError(err.message || '上传失败');
                 });
         }
 
         input.addEventListener('change', function () {
-            Array.prototype.forEach.call(input.files, handleFile);
+            var files = Array.prototype.slice.call(input.files);
             input.value = '';
+
+            // 没开裁剪的字段保持并行，多选大文件不该被串行拖慢
+            if (! cropOptions) {
+                files.forEach(function (file) {
+                    handleFile(file);
+                });
+
+                return;
+            }
+
+            // 开了裁剪才串行：裁剪层一次只处理一张，多张并行会互相盖住
+            files.reduce(function (chain, file) {
+                return chain.then(function () { return handleFile(file); });
+            }, Promise.resolve());
         });
 
         /**

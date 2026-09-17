@@ -3,6 +3,8 @@
     $selected = $getSelectedMedia();
     $statePath = $getStatePath();
     $uploadRule = $getUploadRule();
+    // 闭包比例只求值一次，属性与开关判断共用
+    $cropAspectRatio = $field->getCropAspectRatio();
 @endphp
 
 <x-dynamic-component :component="$getFieldWrapperView()" :field="$field">
@@ -22,6 +24,11 @@
         data-max-size="{{ $uploadRule?->maxSize ?? (int) config('cmf-media.max_size') }}"
         @if ($uploadRule)
             data-rule="{{ $uploadRule->name }}"
+        @endif
+        @if ($cropAspectRatio)
+            data-crop-aspect-ratio="{{ $cropAspectRatio }}"
+            data-crop-max-width="{{ $field->getCropMaxWidth() }}"
+            data-crop-quality="{{ $field->getCropQuality() }}"
         @endif
     >
         <div class="flex items-center gap-2">
