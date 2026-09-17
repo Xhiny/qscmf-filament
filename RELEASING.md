@@ -1,14 +1,15 @@
 # 发布指南
 
-本仓库是 monorepo（真源），通过 CI split 出 5 个只读镜像仓库，Packagist 从镜像仓库取包。
+本仓库是 monorepo（真源），通过 CI split 出 6 个只读镜像仓库，Packagist 从镜像仓库取包。
 
 ```
 quansitech/qscmf-filament（本仓库，所有开发只在这里）
    ├── core/      ──split──► quansitech/cmf-core            ──┐
    ├── users/     ──split──► quansitech/cmf-module-users     ──┤
-   ├── roles/     ──split──► quansitech/cmf-module-roles     ──┼──► Packagist
-   ├── auditing/  ──split──► quansitech/cmf-module-auditing  ──┤
-   └── media/     ──split──► quansitech/cmf-module-media     ──┘
+   ├── roles/     ──split──► quansitech/cmf-module-roles     ──┤
+   ├── auditing/  ──split──► quansitech/cmf-module-auditing  ──┼──► Packagist
+   ├── media/     ──split──► quansitech/cmf-module-media     ──┤
+   └── area/      ──split──► quansitech/cmf-module-area      ──┘
 ```
 
 > 以下假设 monorepo 仓库为 `quansitech/qscmf-filament`、镜像仓库为 `quansitech/cmf-*`。命名不同时全局替换即可。
@@ -24,6 +25,7 @@ quansitech/qscmf-filament（本仓库，所有开发只在这里）
 | `roles` | `roles-v0.5.0` | `v0.5.0` |
 | `auditing` | `auditing-v0.3.0` | `v0.3.0` |
 | `media` | `media-v1.1.0` | `v1.1.0` |
+| `area` | `area-v1.0.0` | `v1.0.0` |
 
 - monorepo 的 tag 带 `{package}-` 前缀（仅用于触发对应包的 split）；
 - 镜像仓库与 Packagist 上的版本是不带前缀的 `v{version}`，符合 Composer semver；
@@ -31,25 +33,25 @@ quansitech/qscmf-filament（本仓库，所有开发只在这里）
 
 ## 一次性配置
 
-1. 在 GitHub 创建 5 个 **public** 仓库，保持默认分支 `main`：
-   `cmf-core`、`cmf-module-users`、`cmf-module-roles`、`cmf-module-auditing`、`cmf-module-media`。
+1. 在 GitHub 创建 6 个 **public** 仓库，保持默认分支 `main`：
+   `cmf-core`、`cmf-module-users`、`cmf-module-roles`、`cmf-module-auditing`、`cmf-module-media`、`cmf-module-area`。
    **每个仓库至少要有一个提交**（勾选 Add a README 或任意初始提交均可）——split action
    （v2.4.5 实测）在完全空的仓库上会推送未出生分支而失败。
-2. 创建 fine-grained PAT，对这 5 个仓库授予 `Contents: Read and write`（或用 GitHub App 生成安装 token）。
+2. 创建 fine-grained PAT，对这 6 个仓库授予 `Contents: Read and write`（或用 GitHub App 生成安装 token）。
    **后续新增镜像仓库时必须同步把它加入 PAT 的授权仓库列表**，否则该包的 split 会因推送权限被拒而失败。
    在本仓库 Settings → Secrets and variables → Actions 添加 secret：`SPLIT_TOKEN`（secret 里只放 token 原文，
    不带任何前缀；workflow 会自动加 `oauth2:` 前缀，因为 split action 不支持裸 fine-grained token，见
    [action issue #47](https://github.com/danharrin/monorepo-split-github-action/issues/47)）。
-3. 推送首个版本 tag，等 workflow 跑完（5 个包各自打一个，互不影响）：
+3. 推送首个版本 tag，等 workflow 跑完（6 个包各自打一个，互不影响）：
 
    ```bash
-   git tag core-v1.0.0 users-v1.0.0 roles-v1.0.0 auditing-v1.0.0 media-v1.0.0
+   git tag core-v1.0.0 users-v1.0.0 roles-v1.0.0 auditing-v1.0.0 media-v1.0.0 area-v1.0.0
    git push origin --tags
    ```
 
-4. 用 GitHub 账号登录 [packagist.org](https://packagist.org)，Submit 5 个镜像仓库地址，例如
+4. 用 GitHub 账号登录 [packagist.org](https://packagist.org)，Submit 6 个镜像仓库地址，例如
    `https://github.com/quansitech/cmf-core`。
-5. 按 Packagist 包页面的提示，在 5 个镜像仓库配置 webhook（或安装 Packagist GitHub App），
+5. 按 Packagist 包页面的提示，在 6 个镜像仓库配置 webhook（或安装 Packagist GitHub App），
    之后新 tag 会自动同步。
 
 ## 发版流程
@@ -84,7 +86,7 @@ Packagist 收到 webhook 后刷新版本。
 
 - **不要**向镜像仓库直接提交或提 PR，内容会被下一次 split 覆盖；issue/PR 请指向 monorepo。
 - 镜像仓库默认分支保持 `main`，与 workflow 中 `branch: main` 一致。
-- monorepo tag 必须是 `{package}-v{version}` 格式（package 为 `core/users/roles/auditing/media` 之一），
+- monorepo tag 必须是 `{package}-v{version}` 格式（package 为 `core/users/roles/auditing/media/area` 之一），
   版本号部分必须是合法 semver（`v1.2.0` 或 `1.2.0`），否则 Composer 不识别。格式不符时 workflow 会报错。
 - `SPLIT_TOKEN` 未配置时 workflow 只打印 notice 并跳过 split（不报红），配置后自动生效。
 - 发布 = 打 tag，不要手动改镜像；所有变更先合入 monorepo `main`。

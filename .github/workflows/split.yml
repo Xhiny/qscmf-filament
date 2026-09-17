@@ -30,6 +30,8 @@ jobs:
             repository_name: cmf-module-auditing
           - local_path: media
             repository_name: cmf-module-media
+          - local_path: area
+            repository_name: cmf-module-area
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -43,9 +45,9 @@ jobs:
           VERSION="v${TAG##*-v}"
 
           case "$PACKAGE" in
-            core|users|roles|auditing|media) ;;
+            core|users|roles|auditing|media|area) ;;
             *)
-              echo "::error::无法识别的 tag '$TAG'：请使用 {package}-v{version} 格式（package: core/users/roles/auditing/media）"
+              echo "::error::无法识别的 tag '$TAG'：请使用 {package}-v{version} 格式（package: core/users/roles/auditing/media/area）"
               exit 1
               ;;
           esac

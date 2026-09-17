@@ -8,10 +8,12 @@
         { "type": "path", "url": "users", "options": { "symlink": true } },
         { "type": "path", "url": "roles", "options": { "symlink": true } },
         { "type": "path", "url": "auditing", "options": { "symlink": true } },
-        { "type": "path", "url": "media", "options": { "symlink": true } }
+        { "type": "path", "url": "media", "options": { "symlink": true } },
+        { "type": "path", "url": "area", "options": { "symlink": true } }
     ],
     "require": {
         "quansitech/cmf-core": "^1.0@dev",
+        "quansitech/cmf-module-area": "^1.0@dev",
         "quansitech/cmf-module-auditing": "^1.0@dev",
         "quansitech/cmf-module-media": "^1.0@dev",
         "quansitech/cmf-module-roles": "^1.0@dev",
