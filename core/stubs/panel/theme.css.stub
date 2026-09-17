@@ -3,3 +3,5 @@
 @source '../../../../app/Filament/**/*';
 @source '../../../../resources/views/filament/**/*';
 @source '../../../../vendor/quansitech/cmf-module-*/src/Filament/**/*';
+@source '../../../../vendor/quansitech/cmf-module-*/resources/views/**/*';
+@source '../../../../vendor/quansitech/cmf-module-*/resources/js/**/*';
