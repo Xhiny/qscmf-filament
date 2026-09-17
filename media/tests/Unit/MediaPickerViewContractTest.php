@@ -41,3 +41,36 @@ it('wires the upload rule from the view through JS to the endpoints', function (
         ->and(file_get_contents(__DIR__.'/../../src/Http/Controllers/MediaUploadController.php'))
         ->toContain("'rule' => \$rule?->name");
 });
+
+/**
+ * 裁剪的比例从字段 → 视图 data 属性 → JS 三处接力，任一环断掉都表现为
+ * 「选了图但没弹出裁剪层」，PHP 侧同样不会报错。
+ */
+it('passes the crop ratio from the field down to the crop layer', function (): void {
+    $view = file_get_contents(__DIR__.'/../../resources/views/forms/components/media-picker.blade.php');
+    $uploader = file_get_contents(__DIR__.'/../../resources/js/direct-upload.js');
+    $cropper = file_get_contents(__DIR__.'/../../resources/js/crop.js');
+
+    expect($view)
+        ->toContain('getCropAspectRatio()')
+        ->toContain('data-crop-aspect-ratio')
+        ->toContain('data-crop-max-width')
+        ->and($uploader)
+        ->toContain('dataset.cropAspectRatio')
+        ->toContain('cropIfNeeded')
+        // 裁剪必须在算 hash 之前完成，否则上报的 hash 与上传字节对不上
+        ->toContain('window.cmfMediaCropFile')
+        ->and($cropper)->toContain('window.cmfMediaCropFile = function');
+});
+
+/**
+ * Cropper.js 用 UMD 版本：模块没有构建步骤，靠 script 标签直接加载，
+ * ESM 版本在浏览器里会直接报语法错误。
+ */
+it('ships a browser-loadable cropper without a build step', function (): void {
+    $asset = file_get_contents(__DIR__.'/../../resources/js/cropper.min.js');
+
+    expect($asset)
+        ->toContain('window.Cropper')
+        ->and(file_exists(__DIR__.'/../../resources/css/cropper.min.css'))->toBeTrue();
+});

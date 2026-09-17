@@ -23,6 +23,11 @@
         @if ($uploadRule)
             data-rule="{{ $uploadRule->name }}"
         @endif
+        @if ($field->getCropAspectRatio())
+            data-crop-aspect-ratio="{{ $field->getCropAspectRatio() }}"
+            data-crop-max-width="{{ $field->getCropMaxWidth() }}"
+            data-crop-quality="{{ (float) config('cmf-media.crop.quality') }}"
+        @endif
     >
         <div class="flex items-center gap-2">
             <label class="fi-btn fi-btn-color-gray fi-btn-size-sm inline-flex cursor-pointer items-center rounded-lg border border-gray-300 px-3 py-1.5 text-sm dark:border-gray-600">

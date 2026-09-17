@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Quansitech\Cmf\Media;
 
+use Filament\Support\Assets\Css;
 use Filament\Support\Assets\Js;
 use Filament\Support\Facades\FilamentAsset;
 use Illuminate\Console\Scheduling\Schedule;
@@ -88,6 +89,7 @@ class CmfMediaServiceProvider extends PackageServiceProvider
 
         $this->publishes([
             __DIR__.'/../resources/js' => public_path('vendor/cmf-media'),
+            __DIR__.'/../resources/css' => public_path('vendor/cmf-media/css'),
         ], 'cmf-media-assets');
     }
 
@@ -249,8 +251,12 @@ class CmfMediaServiceProvider extends PackageServiceProvider
     protected function registerFilamentAssets(): void
     {
         FilamentAsset::register([
+            Css::make('cmf-media-cropper', __DIR__.'/../resources/css/cropper.min.css'),
+            Css::make('cmf-media-crop', __DIR__.'/../resources/css/crop.css'),
             Js::make('cmf-media-spark-md5', __DIR__.'/../resources/js/spark-md5.min.js'),
             Js::make('cmf-media-hash-worker', __DIR__.'/../resources/js/hash.worker.js'),
+            Js::make('cmf-media-cropper', __DIR__.'/../resources/js/cropper.min.js'),
+            Js::make('cmf-media-crop', __DIR__.'/../resources/js/crop.js'),
             Js::make('cmf-media-direct-upload', __DIR__.'/../resources/js/direct-upload.js'),
         ], 'quansitech/cmf-module-media');
     }
