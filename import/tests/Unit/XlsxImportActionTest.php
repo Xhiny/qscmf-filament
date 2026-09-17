@@ -26,6 +26,34 @@ class XlsxImportActionTest extends TestCase
         self::assertNotContains('extensions:csv,txt', $rules);
     }
 
+    public function test_接入方_file_rules_追加的文件规则不被覆写丢失(): void
+    {
+        // 官方 getFileValidationRules 会把 fileRules() 追加的 fileValidationRules 合并进
+        // 最终数组；包内覆写若整体替换 base 而不复刻合并段，接入方自定义文件规则静默
+        // 失效（PR #2 评审缺陷 3）。本用例同时是官方合并语义的特征断言，vendor 升级
+        // 破坏该行为时在此变红
+        $action = XlsxImportAction::make()
+            ->importer(FixtureImporter::class)
+            ->fileRules(['max:100']);
+
+        $rules = $action->getFileValidationRules();
+
+        self::assertContains('extensions:xlsx', $rules);
+        self::assertContains('max:100', $rules);
+    }
+
+    public function test_接入方_file_rules_字符串管道语法按竖线拆分(): void
+    {
+        $action = XlsxImportAction::make()
+            ->importer(FixtureImporter::class)
+            ->fileRules('file|max:100');
+
+        $rules = $action->getFileValidationRules();
+
+        self::assertContains('file', $rules);
+        self::assertContains('max:100', $rules);
+    }
+
     public function test_默认上传体积上限为_20_mb(): void
     {
         $action = XlsxImportAction::make()->importer(FixtureImporter::class);

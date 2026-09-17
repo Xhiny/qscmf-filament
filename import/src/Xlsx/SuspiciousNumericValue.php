@@ -13,7 +13,7 @@ use Closure;
  */
 final class SuspiciousNumericValue
 {
-    public const FAILURE_MESSAGE = '检测到疑似被 Excel 破坏的数值（科学计数法或精度截断，如 4.41302E+17）：请下载导入模板，在文本锁定列中直接填写，避免手工新建表格输入长数字';
+    public const FAILURE_MESSAGE = '单元格数值超出 Excel 精度范围，请将该列设为文本格式后用模板重新填写';
 
     public static function matches(mixed $value): bool
     {

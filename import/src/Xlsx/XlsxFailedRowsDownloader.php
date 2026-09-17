@@ -34,6 +34,8 @@ use Throwable;
  */
 class XlsxFailedRowsDownloader implements Downloader
 {
+    public const REASON_COLUMN = '失败原因';
+
     public function __invoke(Import $import): StreamedResponse
     {
         /** @var Collection<int, FailedImportRow> $failedRows */
@@ -66,7 +68,8 @@ class XlsxFailedRowsDownloader implements Downloader
 
     /**
      * 表头 = 首条失败行原文件表头序 + 末列「失败原因」（与各失败行 data 键序一致，
-     * 官方按 columnMap 反查原表头落库）。
+     * 官方按 columnMap 反查原表头落库）。快照表头已含「失败原因」时（重传链路）
+     * 先剔除再追加，保障清单恒为一列「失败原因」。
      *
      * @param  Collection<int, FailedImportRow>  $failedRows
      * @return array<int, string>
@@ -77,7 +80,12 @@ class XlsxFailedRowsDownloader implements Downloader
             ? array_map(strval(...), array_keys($failedRows->first()->data ?? []))
             : [];
 
-        $headers[] = '失败原因';
+        $headers = array_values(array_filter(
+            $headers,
+            fn (string $header): bool => $header !== self::REASON_COLUMN,
+        ));
+
+        $headers[] = self::REASON_COLUMN;
 
         return $headers;
     }
@@ -153,8 +161,12 @@ class XlsxFailedRowsDownloader implements Downloader
         $this->writeRow($mainSheet, 1, $headers);
 
         foreach ($failedRows as $rowIndex => $failedImportRow) {
+            $data = $failedImportRow->data ?? [];
+            // 与表头同口径剔除快照中的旧「失败原因」键，保证值与表头对齐
+            unset($data[self::REASON_COLUMN]);
+
             $this->writeRow($mainSheet, $rowIndex + 2, [
-                ...array_map(strval(...), array_values($failedImportRow->data ?? [])),
+                ...array_map(strval(...), array_values($data)),
                 $failedImportRow->validation_error ?? '系统错误',
             ]);
         }

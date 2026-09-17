@@ -59,7 +59,7 @@ class XlsxImporterTest extends TestCase
             $idCardErrors = $exception->errors()['id_card'] ?? [];
             $reasons = implode(' ', $idCardErrors);
 
-            self::assertStringContainsString('请下载导入模板', $reasons);
+            self::assertStringContainsString('设为文本格式后用模板重新填写', $reasons);
         }
     }
 

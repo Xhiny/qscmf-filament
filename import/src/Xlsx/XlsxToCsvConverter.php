@@ -57,7 +57,7 @@ final class XlsxToCsvConverter
                 $value = CellNormalizer::normalize($cell);
                 $values[$columnIndex] = $value;
 
-                if ($value !== null && $value !== '') {
+                if (! $this->isBlank($value)) {
                     $isBlankRow = false;
                 }
             }
@@ -70,7 +70,7 @@ final class XlsxToCsvConverter
                     ? ($values[$anchorColumn] ?? null)
                     : ($anchorValues[$anchorRow][$anchorColumn] ?? null);
 
-                if ($values[$columnIndex] !== null && $values[$columnIndex] !== '') {
+                if (! $this->isBlank($values[$columnIndex])) {
                     $isBlankRow = false;
                 }
             }
@@ -78,13 +78,25 @@ final class XlsxToCsvConverter
             foreach ($anchorCells[$rowIndex] ?? [] as $columnIndex => $true) {
                 $anchorValues[$rowIndex][$columnIndex] = $values[$columnIndex] ?? null;
             }
-            unset($anchorValues[$rowIndex - 1]);
 
             if ($isBlankRow) {
                 continue;
             }
 
             if ($headerColumnCount === null) {
+                // openspout 按 xlsx 声明宽度（dimension/spans）补齐行：带格式无内容的
+                // 幽灵单元格 / 列宽残留会把表头行撑出尾部空列，故定宽前先裁尾。
+                // 被裁掉的幻列本就是 unmapped 忽略语义，数据无损
+                $values = $this->trimTrailingBlankCells($values);
+
+                // 有效表头列数不足 2（如标题行误置首行）：不嗅探会把标题行当表头，
+                // 数据列整体错位，故显式报错引导
+                if (count(array_filter($values, fn (?string $value): bool => ! $this->isBlank($value))) < 2) {
+                    $reader->close();
+
+                    throw new InvalidXlsxFileException('未找到表头行，请保留模板首行表头后重试');
+                }
+
                 $headerColumnCount = count($values);
                 $values = array_map(
                     static fn (?string $value): string => (string) $value,
@@ -145,6 +157,36 @@ final class XlsxToCsvConverter
         }
 
         return [$sheet, $reader];
+    }
+
+    /**
+     * 用户感知的空行/空格判定：Unicode 空白（含全角空格）trim 后判空。
+     * 仅用于判空，不改写单元格原值（首尾空白清洗职责在各 Importer 业务校验层）。
+     */
+    private function isBlank(?string $value): bool
+    {
+        return mb_trim((string) $value) === '';
+    }
+
+    /**
+     * 裁掉尾部空白格（含带格式无内容的幽灵格式格），中间列位不动。
+     *
+     * @param  array<int, string|null>  $values
+     * @return array<int, string|null>
+     */
+    private function trimTrailingBlankCells(array $values): array
+    {
+        while ($values !== []) {
+            $lastColumnIndex = array_key_last($values);
+
+            if (! $this->isBlank($values[$lastColumnIndex])) {
+                break;
+            }
+
+            unset($values[$lastColumnIndex]);
+        }
+
+        return $values;
     }
 
     /**

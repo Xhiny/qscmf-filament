@@ -37,6 +37,16 @@ class CellNormalizerTest extends TestCase
         self::assertSame('99.9', CellNormalizer::normalize(Cell::fromValue(99.9)));
     }
 
+    public function test_合法小数定点输出不触发可疑拒绝(): void
+    {
+        // |v| < 1e-4 的小数 PHP (string) 会产生科学计数法字样（0.00005 → 5.0E-5），
+        // 旧实现在字符串层被误判为可疑值整行拒绝（PR #2 评审缺陷 2）
+        $normalized = CellNormalizer::normalize(Cell::fromValue(0.00005));
+
+        self::assertSame('0.00005', $normalized);
+        self::assertFalse(CellNormalizer::isSuspicious($normalized));
+    }
+
     public function test_超出安全区的整数透传为科学计数法字样(): void
     {
         // 18 位数字以数值类型存储时 Excel 已截断末位，透传保留科学计数法字样，
@@ -45,6 +55,20 @@ class CellNormalizerTest extends TestCase
 
         self::assertNotNull($normalized);
         self::assertTrue(CellNormalizer::isSuspicious($normalized), "实际归一值: {$normalized}");
+    }
+
+    public function test_安全区边界两侧整数判定分流(): void
+    {
+        // 2^53 - 2：float64 可精确表示且在安全区内 → 定点十进制放行
+        $inside = CellNormalizer::normalize(Cell::fromValue((float) '9007199254740990'));
+
+        self::assertSame('9007199254740990', $inside);
+        self::assertFalse(CellNormalizer::isSuspicious($inside));
+
+        // 2^53：超出安全区 → 科学计数法字样透传供行级拒绝
+        $outside = CellNormalizer::normalize(Cell::fromValue((float) '9007199254740992'));
+
+        self::assertTrue(CellNormalizer::isSuspicious($outside), "实际归一值: {$outside}");
     }
 
     public function test_日期序列转为_y_m_d_h_i_s_字符串(): void
@@ -78,8 +102,10 @@ class CellNormalizerTest extends TestCase
         self::assertSame('2.5', CellNormalizer::normalize($formulaWithFloatCache));
     }
 
-    public function test_公式无缓存值按空值处理(): void
+    public function test_公式计算缓存为_null_时返回_null(): void
     {
+        // xlsx 读取层无缓存公式（<v> 缺失）由 openspout 直接产出数值 0（上游语义，
+        // 见 README「已知边界」）；本用例仅锁定 FormulaCell(computedValue=null) 的归一契约
         $formulaWithoutCache = new FormulaCell('=A1+B1', null, null);
 
         self::assertNull(CellNormalizer::normalize($formulaWithoutCache));

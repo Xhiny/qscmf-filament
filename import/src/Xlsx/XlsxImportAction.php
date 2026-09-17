@@ -62,7 +62,7 @@ class XlsxImportAction extends ImportAction
      */
     public function getFileValidationRules(): array
     {
-        return [
+        $fileRules = [
             'extensions:xlsx',
             // Laravel 文件 max 单位为 KB；zip 容器防解压放大
             'max:'.intdiv($this->getMaxFileSize(), 1024),
@@ -71,6 +71,24 @@ class XlsxImportAction extends ImportAction
             fn (): Closure => $this->xlsxContainerRule(),
             fn (): Closure => $this->duplicateColumnsRule(),
         ];
+
+        // 复刻官方 fileRules() 合并段：不调 parent::getFileValidationRules()（官方 base
+        // 的 extensions:csv,txt 与 xlsx 收窄冲突），但必须保留 fileValidationRules 追加项
+        // 的合并语义，否则接入方 fileRules() 自定义文件规则静默失效
+        foreach ($this->fileValidationRules as $rules) {
+            $rules = $this->evaluate($rules);
+
+            if (is_string($rules)) {
+                $rules = explode('|', $rules);
+            }
+
+            $fileRules = [
+                ...$fileRules,
+                ...$rules,
+            ];
+        }
+
+        return $fileRules;
     }
 
     /**
@@ -90,6 +108,10 @@ class XlsxImportAction extends ImportAction
             $tempCopy = (string) tempnam(sys_get_temp_dir(), 'xlsx-import-');
 
             $source = $file->readStream();
+
+            if ($source === false) {
+                return false;
+            }
 
             $target = fopen($tempCopy, 'w+');
 

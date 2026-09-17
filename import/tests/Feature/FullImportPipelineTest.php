@@ -77,7 +77,7 @@ class FullImportPipelineTest extends TestCase
 
         $reasons = $import->failedRows()->pluck('validation_error')->all();
 
-        self::assertStringContainsString('请下载导入模板', (string) $reasons[1]);
+        self::assertStringContainsString('设为文本格式后用模板重新填写', (string) $reasons[1]);
     }
 
     public function test_三态_整单拒绝_伪_xlsx_在上传校验层被拒(): void
@@ -121,6 +121,42 @@ class FullImportPipelineTest extends TestCase
         self::assertStringContainsString('required', $reason);
         // 空字符串单元格经 phpspreadsheet toArray() 读回为 null
         self::assertSame(['李四', '12345', null, $reason], $rows[1]);
+    }
+
+    public function test_重传链路失败原因恒为单列(): void
+    {
+        // 上一轮失败清单重传产生的失败行：快照原始表头已含「失败原因」键。
+        // 下载器不去重会把清单写成双列「失败原因」，重传必触发重复列标题文件级校验
+        $import = new Import;
+        $import->user()->associate($this->user);
+        $import->file_name = 'data.xlsx';
+        $import->file_path = 'unused';
+        $import->importer = FixtureImporter::class;
+        $import->total_rows = 1;
+        $import->save();
+
+        $import->failedRows()->create([
+            'data' => [
+                '姓名' => '李四',
+                '身份证号' => '12345',
+                '性别' => '',
+                '失败原因' => '身份证号格式不正确（上一轮）',
+            ],
+            'validation_error' => '身份证号格式不正确（本轮）',
+        ]);
+
+        $bytes = $this->captureResponseContent(FixtureImporter::getFailedRowsDownloader()($import));
+        $rows = $this->readXlsxRows($bytes);
+
+        self::assertSame(['姓名', '身份证号', '性别', '失败原因'], $rows[0]);
+        self::assertSame(
+            1,
+            count(array_keys($rows[0], '失败原因')),
+            '重传链路下载的清单「失败原因」恒为一列',
+        );
+        // 末列取当前轮 validation_error，快照中的旧「失败原因」键被剔除且不错位
+        // （空字符串单元格经 phpspreadsheet toArray() 读回为 null）
+        self::assertSame(['李四', '12345', null, '身份证号格式不正确（本轮）'], $rows[1]);
     }
 
     public function test_失败清单保留模板级约束(): void
