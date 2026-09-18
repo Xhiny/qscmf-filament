@@ -8,17 +8,13 @@ use OpenSpout\Reader\XLSX\Reader;
 use OpenSpout\Reader\XLSX\Sheet;
 
 /**
- * xlsx → UTF-8 CSV 流转换器（内存中间格式，仅第一个工作表）。
- *
- * 官方 ImportAction 的 4 个文件消费点全部经 getUploadedFileStream() 读取 CSV，
- * 本转换器使它们无感知地接受 xlsx 输入。可疑值（科学计数法 / 截断长整数）由
- * CellNormalizer 原样透传，不在此层拒绝。
+ * xlsx → UTF-8 CSV 流转换器（内存中间格式，仅第一个工作表）：官方 ImportAction
+ * 的文件消费点全部经 getUploadedFileStream() 读 CSV，本转换器使其无感知接受 xlsx。
+ * 可疑值由 CellNormalizer 原样透传，不在此层拒绝。
  */
 final class XlsxToCsvConverter
 {
-    /**
-     * 单个合并范围展开后的格子数上限，防御异常膨胀的文件。
-     */
+    /** 单个合并范围展开后的格子数上限，防异常膨胀文件。 */
     private const MAX_MERGE_RANGE_CELLS = 10000;
 
     /**
@@ -62,7 +58,7 @@ final class XlsxToCsvConverter
                 }
             }
 
-            // 合并单元格取左上值：非锚点格子填充锚点值
+            // 合并单元格取左上锚点值
             foreach ($mergeMap[$rowIndex] ?? [] as $columnIndex => $anchor) {
                 [$anchorRow, $anchorColumn] = $anchor;
 
@@ -89,8 +85,7 @@ final class XlsxToCsvConverter
                 // 被裁掉的幻列本就是 unmapped 忽略语义，数据无损
                 $values = $this->trimTrailingBlankCells($values);
 
-                // 有效表头列数不足 2（如标题行误置首行）：不嗅探会把标题行当表头，
-                // 数据列整体错位，故显式报错引导
+                // 有效列不足 2 多为标题行误置首行，放行会使数据列整体错位
                 if (count(array_filter($values, fn (?string $value): bool => ! $this->isBlank($value))) < 2) {
                     $reader->close();
 
@@ -102,7 +97,6 @@ final class XlsxToCsvConverter
                     static fn (?string $value): string => (string) $value,
                     $values,
                 );
-                // 表头去除首尾空白，保证与列 label 的自动映射匹配
                 $values = array_map(trim(...), $values);
             } else {
                 $values = $this->padRowToHeader($values, $headerColumnCount);
@@ -160,8 +154,7 @@ final class XlsxToCsvConverter
     }
 
     /**
-     * 用户感知的空行/空格判定：Unicode 空白（含全角空格）trim 后判空。
-     * 仅用于判空，不改写单元格原值（首尾空白清洗职责在各 Importer 业务校验层）。
+     * 用户感知的空行/空格判定（Unicode 空白含全角空格）；仅判空不改写单元格原值。
      */
     private function isBlank(?string $value): bool
     {

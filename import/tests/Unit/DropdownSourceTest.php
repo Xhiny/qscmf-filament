@@ -9,7 +9,7 @@ use Quansitech\Cmf\Import\Tests\TestCase;
 
 class DropdownSourceTest extends TestCase
 {
-    public function test_const_source_实现契约并返回选项(): void
+    public function test_const_source_implements_contract_and_returns_options(): void
     {
         $source = ConstSource::make(['男', '女']);
 
@@ -18,7 +18,7 @@ class DropdownSourceTest extends TestCase
         self::assertNotSame('', $source->description());
     }
 
-    public function test_query_source_实现契约并快照选项(): void
+    public function test_query_source_implements_contract_and_snapshots_options(): void
     {
         $source = QuerySource::make(fn (): array => collect(['广州', '深圳'])->all());
 
@@ -26,7 +26,7 @@ class DropdownSourceTest extends TestCase
         self::assertSame(['广州', '深圳'], $source->options());
     }
 
-    public function test_query_source_选项数上限_2000(): void
+    public function test_query_source_caps_options_at_2000(): void
     {
         $options = array_map(fn (int $i): string => "选项{$i}", range(1, 2100));
 

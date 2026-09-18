@@ -17,7 +17,8 @@
         "filament/actions": "^5.8",
         "league/csv": "^9.27",
         "openspout/openspout": "^4.23",
-        "phpoffice/phpspreadsheet": "^3.0 || ^4.0 || ^5.0"
+        "phpoffice/phpspreadsheet": "^3.0 || ^4.0 || ^5.0",
+        "symfony/polyfill-mbstring": "^1.31"
     },
     "require-dev": {
         "orchestra/testbench": "^10.0",

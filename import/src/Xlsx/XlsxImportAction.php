@@ -9,16 +9,9 @@ use League\Csv\Reader as CsvReader;
 use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
 
 /**
- * 仅接受 xlsx 的官方导入 Action。
- *
- * 通过覆盖 getUploadedFileStream() 咽喉——官方导入流水线的唯一文件入口
- * （表头嗅探、映射下拉、执行导入、文件校验全部经此读取）——将 xlsx 归一为
- * UTF-8 CSV 流，官方能力（映射 UI、maxRows、队列、失败清单、通知）零丢失。
- *
- * 上传接收层同步收窄：官方 setUp() 给弹窗 file 字段硬编码 CSV mime 白名单
- * （acceptedFileTypes 同时生成服务端 mimetypes 校验与浏览器选择器过滤），
- * 本类覆写 schema() 对该字段改挂 xlsx mime——mimetypes 规则是动态闭包
- * （验证时读取当前白名单），改挂后 xlsx 通过、csv 整单拒绝。
+ * 仅接受 xlsx 的官方导入 Action：覆盖 getUploadedFileStream() 咽喉——官方导入
+ * 流水线（嗅探、映射、执行、校验）的唯一文件入口——把 xlsx 归一为 UTF-8 CSV 流，
+ * 并把弹窗 file 字段的 mime 白名单收窄为 xlsx。
  */
 class XlsxImportAction extends ImportAction
 {
@@ -26,6 +19,10 @@ class XlsxImportAction extends ImportAction
 
     protected int|Closure $maxFileSize = 20971520; // 20MB
 
+    /**
+     * mime 收窄仅覆盖 Closure 形态；传数组时官方 CSV 白名单原样保留，xlsx 会被
+     * 服务端 mimetypes 校验拒绝，须自行对 file 字段调用 acceptedFileTypes 收窄。
+     */
     public function schema(array|Closure|null $schema): static
     {
         if (! $schema instanceof Closure) {
@@ -64,17 +61,15 @@ class XlsxImportAction extends ImportAction
     {
         $fileRules = [
             'extensions:xlsx',
-            // Laravel 文件 max 单位为 KB；zip 容器防解压放大
+            // Laravel max 单位为 KB
             'max:'.intdiv($this->getMaxFileSize(), 1024),
-            // Field::rules() 挂载的闭包会先被 Filament 容器求值（官方 ImportAction 同款包裹），
-            // 零参外层闭包求值后返回原生 Laravel Validator 闭包 (string $attribute, mixed $value, Closure $fail)
+            // 零参外层闭包经 Filament 容器求值后返回原生校验闭包（直挂会被注入标量参数）
             fn (): Closure => $this->xlsxContainerRule(),
             fn (): Closure => $this->duplicateColumnsRule(),
         ];
 
-        // 复刻官方 fileRules() 合并段：不调 parent::getFileValidationRules()（官方 base
-        // 的 extensions:csv,txt 与 xlsx 收窄冲突），但必须保留 fileValidationRules 追加项
-        // 的合并语义，否则接入方 fileRules() 自定义文件规则静默失效
+        // 不调 parent（官方 base 含 extensions:csv,txt，与 xlsx 收窄冲突），但须保留
+        // fileValidationRules 追加项的合并语义，否则接入方自定义文件规则静默失效
         foreach ($this->fileValidationRules as $rules) {
             $rules = $this->evaluate($rules);
 
@@ -92,9 +87,8 @@ class XlsxImportAction extends ImportAction
     }
 
     /**
-     * 无效 xlsx 返回 false（而非抛异常）：官方 ImportAction 的 afterStateUpdated 与
-     * 列映射 Fieldset 闭包在 validateOnly 规则收集阶段即调用本方法，且均按
-     * `if (! $csvStream) return` 优雅兜底；抛异常会在校验执行前把 Livewire 请求炸成 500。
+     * 无效 xlsx 返回 false 而非抛异常：官方消费点按 `if (! $csvStream) return` 兜底，
+     * 抛异常会在校验执行前把 Livewire 请求炸成 500。
      *
      * @return resource | false
      */
@@ -103,28 +97,30 @@ class XlsxImportAction extends ImportAction
         $localPath = $file->getRealPath();
         $tempCopy = null;
 
-        if (! is_string($localPath) || ! is_file($localPath)) {
-            // 远端磁盘（如 Livewire 临时上传走 S3）：物化到本地临时文件供 openspout 读取
-            $tempCopy = (string) tempnam(sys_get_temp_dir(), 'xlsx-import-');
-
-            $source = $file->readStream();
-
-            if ($source === false) {
-                return false;
-            }
-
-            $target = fopen($tempCopy, 'w+');
-
-            if ($target === false) {
-                return false;
-            }
-
-            stream_copy_to_stream($source, $target);
-            fclose($target);
-            fclose($source);
-        }
-
         try {
+            if (! is_string($localPath) || ! is_file($localPath)) {
+                // 远端磁盘（如 Livewire 临时上传走 S3）：物化到本地临时文件供 openspout 读取
+                $tempCopy = (string) tempnam(sys_get_temp_dir(), 'xlsx-import-');
+
+                $source = $file->readStream();
+
+                if ($source === false) {
+                    return false;
+                }
+
+                $target = fopen($tempCopy, 'w+');
+
+                if ($target === false) {
+                    fclose($source);
+
+                    return false;
+                }
+
+                stream_copy_to_stream($source, $target);
+                fclose($target);
+                fclose($source);
+            }
+
             return (new XlsxToCsvConverter)->convert($tempCopy ?? $localPath);
         } catch (InvalidXlsxFileException) {
             return false;
@@ -164,10 +160,7 @@ class XlsxImportAction extends ImportAction
         return $magic;
     }
 
-    /**
-     * 官方「重复表头」校验语义不变，读取通道切换为 xlsx 转换流；
-     * 伪 xlsx 在此层整单拒绝并给出中文提示。
-     */
+    /** 官方「重复表头」校验语义不变，仅读取通道切换为 xlsx 转换流。 */
     private function duplicateColumnsRule(): Closure
     {
         return function (string $attribute, mixed $value, Closure $fail): void {

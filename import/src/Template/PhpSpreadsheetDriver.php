@@ -41,8 +41,6 @@ class PhpSpreadsheetDriver implements TemplateGenerator
         $optionsSheet = new Worksheet($spreadsheet, self::OPTIONS_SHEET_NAME);
         $spreadsheet->addSheet($optionsSheet);
 
-        // 接入方定义 getTemplateGuideLines() 则完全接管说明内容（运营视角文案）；
-        // 未定义时退回按列声明自动生成的技术性说明
         $hasCustomGuideLines = method_exists($importerClass, 'getTemplateGuideLines');
         $guideLines = $hasCustomGuideLines
             ? array_values((array) $importerClass::getTemplateGuideLines())

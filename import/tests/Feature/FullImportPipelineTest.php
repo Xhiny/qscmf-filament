@@ -25,7 +25,7 @@ use Symfony\Component\HttpFoundation\Response;
 use ZipArchive;
 
 /**
- * xlsx 全链路三态 Feature 测试（任务 5.1 / 5.2）：
+ * xlsx 全链路三态 Feature 测试：
  * 经 XlsxImportAction 咽喉 → xlsx→CSV 转换 → 官方 ImportCsv job → Importer → 落库 /
  * FailedImportRow。执行路径与官方 ImportAction 的 action 闭包一致。
  */
@@ -44,7 +44,7 @@ class FullImportPipelineTest extends TestCase
         ]);
     }
 
-    public function test_三态_全部成功(): void
+    public function test_three_way_all_rows_succeed(): void
     {
         $builder = $this->fixtureBuilder();
         $builder->setText('A3', '李四')->setText('B3', '441302199001012345')->setText('C3', '女');
@@ -58,12 +58,11 @@ class FullImportPipelineTest extends TestCase
         self::assertSame('441302199001011234', FixtureMember::find(1)->id_card);
     }
 
-    public function test_三态_部分失败_可疑值与违规行走行级失败通道(): void
+    public function test_three_way_partial_failures_go_to_row_level_channel(): void
     {
         $builder = $this->fixtureBuilder();
-        // 身份证号格式违规
-        $builder->setText('A3', '李四')->setText('B3', '12345')->setText('C3', '女');
         // 身份证号为数值单元格 → Excel 已截断 → 科学计数法透传 → 行级拒绝
+        $builder->setText('A3', '李四')->setText('B3', '12345')->setText('C3', '女');
         $builder->setText('A4', '王五');
         $builder->setNumeric('B4', (float) '441302199001011234');
         $builder->setText('C4', '男');
@@ -80,7 +79,7 @@ class FullImportPipelineTest extends TestCase
         self::assertStringContainsString('设为文本格式后用模板重新填写', (string) $reasons[1]);
     }
 
-    public function test_三态_整单拒绝_伪_xlsx_在上传校验层被拒(): void
+    public function test_three_way_total_rejection_fake_xlsx_rejected_at_upload_validation(): void
     {
         $action = XlsxImportAction::make()->importer(FixtureImporter::class);
         $file = $this->makeFakeUpload('fake.xlsx', '不是 xlsx 的文本内容');
@@ -97,10 +96,9 @@ class FullImportPipelineTest extends TestCase
         self::assertSame(0, FixtureMember::count());
     }
 
-    public function test_失败清单_xlsx_内容为原行数据加末列全部失败原因(): void
+    public function test_failed_rows_xlsx_contains_original_data_and_joined_reasons_column(): void
     {
         $builder = $this->fixtureBuilder();
-        // 同一行触发两个失败：身份证格式违规 + 性别缺失 → 末列须拼接全部原因
         $builder->setText('A3', '李四')->setText('B3', '12345');
 
         $import = $this->importRows($this->makeFakeUpload('data.xlsx', $this->bytes($builder)));
@@ -123,7 +121,7 @@ class FullImportPipelineTest extends TestCase
         self::assertSame(['李四', '12345', null, $reason], $rows[1]);
     }
 
-    public function test_重传链路失败原因恒为单列(): void
+    public function test_retransmission_keeps_single_failure_reason_column(): void
     {
         // 上一轮失败清单重传产生的失败行：快照原始表头已含「失败原因」键。
         // 下载器不去重会把清单写成双列「失败原因」，重传必触发重复列标题文件级校验
@@ -159,7 +157,7 @@ class FullImportPipelineTest extends TestCase
         self::assertSame(['李四', '12345', null, '身份证号格式不正确（本轮）'], $rows[1]);
     }
 
-    public function test_失败清单保留模板级约束(): void
+    public function test_failed_rows_sheet_keeps_template_level_constraints(): void
     {
         $builder = $this->fixtureBuilder();
         $builder->setText('A3', '李四')->setText('B3', '12345');
@@ -177,12 +175,11 @@ class FullImportPipelineTest extends TestCase
         $sheet = $spreadsheet->getSheet(0);
         $optionsSheet = $spreadsheet->getSheetByName('_options');
 
-        // 文本锁定（numFmt `@`）与模板同口径
+        // 文本锁定与模板同口径
         self::assertSame('@', $sheet->getStyle('A2')->getNumberFormat()->getFormatCode());
         self::assertSame('@', $sheet->getStyle('B2')->getNumberFormat()->getFormatCode());
         self::assertNotSame('@', $sheet->getStyle('C2')->getNumberFormat()->getFormatCode());
 
-        // 长度约束同模板口径
         $length = $sheet->getDataValidation('B2');
 
         self::assertSame('textLength', $length->getType());
@@ -190,7 +187,7 @@ class FullImportPipelineTest extends TestCase
         self::assertSame('18', $length->getFormula1());
         self::assertSame('18', $length->getFormula2());
 
-        // 下拉：隐藏 _options 快照 + 范围引用，选项为清单生成时点快照
+        // 选项为清单生成时点的快照（非实时查询）
         self::assertNotNull($optionsSheet);
         self::assertSame(Worksheet::SHEETSTATE_HIDDEN, $optionsSheet->getSheetState());
         self::assertSame('男', $optionsSheet->getCell('A1')->getValue());
@@ -201,13 +198,12 @@ class FullImportPipelineTest extends TestCase
         self::assertSame('list', $dropdown->getType());
         self::assertSame('_options!$A$1:$A$2', $dropdown->getFormula1());
 
-        // 末列「失败原因」不挂任何约束
         self::assertSame('none', $sheet->getDataValidation('D2')->getType());
 
         unlink($path);
     }
 
-    public function test_失败清单下拉校验落盘_xml_不得抑制下拉箭头(): void
+    public function test_failed_rows_dropdown_xml_must_not_suppress_arrow(): void
     {
         $builder = $this->fixtureBuilder();
         $builder->setText('A3', '李四')->setText('B3', '12345');
@@ -221,7 +217,7 @@ class FullImportPipelineTest extends TestCase
         self::assertSame([], $this->dropdownSuppressions($bytes));
     }
 
-    public function test_失败清单数据单元格落盘为字符串类型(): void
+    public function test_failed_rows_data_cells_persisted_as_string_type(): void
     {
         $builder = $this->fixtureBuilder();
         // 姓名缺失（required 失败）而身份证合法 → 18 位数字字符串完整进清单
@@ -240,7 +236,7 @@ class FullImportPipelineTest extends TestCase
         self::assertSame('441302199001019999', $rows[1][1]);
     }
 
-    public function test_表头无法匹配导入列时降级不丢数据(): void
+    public function test_unmatched_headers_degrade_without_data_loss(): void
     {
         $builder = XlsxBuilder::make();
         // 上传文件表头与导入列 label/name 均不同（导入时经手动映射完成的场景），
@@ -263,12 +259,10 @@ class FullImportPipelineTest extends TestCase
         file_put_contents($path, $bytes);
         $sheet = IOFactory::load($path)->getSheet(0);
 
-        // 原表头序保留、原数据完整（失败行写在清单第 2 行）
         self::assertSame(['客户姓名', '证件号码', '性别', '失败原因'], $sheet->toArray()[0]);
         self::assertSame('12345', $sheet->getCell('B2')->getValue());
         self::assertSame('李四', $sheet->getCell('A2')->getValue());
 
-        // 无法匹配的列无约束，可匹配列（性别）约束照常挂载
         self::assertSame('none', $sheet->getDataValidation('A2')->getType());
         self::assertSame('none', $sheet->getDataValidation('B2')->getType());
         self::assertSame('list', $sheet->getDataValidation('C2')->getType());
@@ -276,7 +270,7 @@ class FullImportPipelineTest extends TestCase
         unlink($path);
     }
 
-    public function test_约束装配异常时降级为纯数据清单(): void
+    public function test_constraint_assembly_exception_degrades_to_plain_data_sheet(): void
     {
         $importerClass = ThrowingSourceImporter::class;
 
@@ -290,7 +284,6 @@ class FullImportPipelineTest extends TestCase
 
         self::assertSame(1, $import->getFailedRowsCount());
 
-        // 数据源抛异常不得拖垮数据导出基线：清单仍可下载、数据完整、无任何约束
         $bytes = $this->captureResponseContent($importerClass::getFailedRowsDownloader()($import));
 
         $path = (string) tempnam(sys_get_temp_dir(), 'xlsx-failed-assert-');
@@ -310,7 +303,7 @@ class FullImportPipelineTest extends TestCase
         unlink($path);
     }
 
-    public function test_500_行_sync_导入压测基准(): void
+    public function test_500_row_sync_import_benchmark(): void
     {
         $builder = XlsxBuilder::make();
         $builder

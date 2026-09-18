@@ -12,7 +12,7 @@ use ZipArchive;
 
 class PhpSpreadsheetDriverTest extends TestCase
 {
-    public function test_生成模板的工作表结构(): void
+    public function test_generated_template_sheet_structure(): void
     {
         $path = (new PhpSpreadsheetDriver)->generate(FixtureImporter::class);
 
@@ -28,7 +28,7 @@ class PhpSpreadsheetDriverTest extends TestCase
         unlink($path);
     }
 
-    public function test_表头为中文_label_且含示例行(): void
+    public function test_headers_use_chinese_labels_with_example_row(): void
     {
         $path = (new PhpSpreadsheetDriver)->generate(FixtureImporter::class);
 
@@ -45,7 +45,7 @@ class PhpSpreadsheetDriverTest extends TestCase
         unlink($path);
     }
 
-    public function test_text_lock_列的_num_fmt_为文本(): void
+    public function test_text_lock_column_num_fmt_is_text(): void
     {
         $path = (new PhpSpreadsheetDriver)->generate(FixtureImporter::class);
 
@@ -58,7 +58,7 @@ class PhpSpreadsheetDriverTest extends TestCase
         unlink($path);
     }
 
-    public function test_length_列的_text_length_校验(): void
+    public function test_length_column_gets_text_length_validation(): void
     {
         $path = (new PhpSpreadsheetDriver)->generate(FixtureImporter::class);
 
@@ -74,7 +74,7 @@ class PhpSpreadsheetDriverTest extends TestCase
         unlink($path);
     }
 
-    public function test_dropdown_列写入隐藏_options_sheet_并以范围引用(): void
+    public function test_dropdown_column_writes_hidden_options_sheet_with_range_reference(): void
     {
         $path = (new PhpSpreadsheetDriver)->generate(FixtureImporter::class);
 
@@ -89,14 +89,13 @@ class PhpSpreadsheetDriverTest extends TestCase
 
         self::assertSame('list', $validation->getType());
         self::assertSame('_options!$A$1:$A$2', $validation->getFormula1());
-        // PhpSpreadsheet 层语义：showDropDown=true = 显示下拉（Writer 落盘取反为 "0"）；
-        // 落盘真实属性由 test_下拉校验落盘_xml_不得抑制下拉箭头 以 XML 原文兜底
+        // PhpSpreadsheet 层语义：true = 显示下拉；落盘真实属性由 XML 用例直查兜底
         self::assertTrue($validation->getShowDropDown());
 
         unlink($path);
     }
 
-    public function test_填写说明_sheet_默认生成且不含时间戳与长度说明(): void
+    public function test_guide_sheet_generated_without_timestamp_and_length_notes(): void
     {
         $path = (new PhpSpreadsheetDriver)->generate(FixtureImporter::class);
 
@@ -123,7 +122,7 @@ class PhpSpreadsheetDriverTest extends TestCase
         unlink($path);
     }
 
-    public function test_接入方定义_get_template_guide_lines_时完全接管说明_sheet(): void
+    public function test_custom_guide_lines_take_over_guide_sheet_entirely(): void
     {
         $importerClass = new class extends FixtureImporter
         {
@@ -154,12 +153,11 @@ class PhpSpreadsheetDriverTest extends TestCase
         unlink($path);
     }
 
-    public function test_下拉校验落盘_xml_不得抑制下拉箭头(): void
+    public function test_persisted_dropdown_xml_must_not_suppress_arrow(): void
     {
         $path = (new PhpSpreadsheetDriver)->generate(FixtureImporter::class);
 
-        // 读回断言测不到落盘属性（读回默认值掩盖真实 XML），须直查 xl/worksheets 原文；
-        // OOXML showDropDown="1" 语义为「抑制下拉箭头」，真机表现为下拉不可见
+        // 读回断言测不到落盘属性，须直查 xl/worksheets 原文（showDropDown="1" = 抑制箭头）
         $zip = new ZipArchive;
         $zip->open($path);
 
@@ -191,7 +189,7 @@ class PhpSpreadsheetDriverTest extends TestCase
         self::assertSame([], $violations, 'list 校验落盘不得携带 showDropDown="1"（会抑制 Excel/WPS 下拉箭头）');
     }
 
-    public function test_普通_import_column_列无模板校验且不报错(): void
+    public function test_plain_import_column_gets_no_template_validation(): void
     {
         $importerClass = new class extends FixtureImporter
         {

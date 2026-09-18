@@ -18,7 +18,7 @@ class XlsxImporterTest extends TestCase
         parent::defineDatabaseMigrations();
     }
 
-    public function test_所有已映射列自动附加可疑值检测规则(): void
+    public function test_all_mapped_columns_get_suspicious_value_rule(): void
     {
         $importer = $this->makeImporter(['name' => '姓名', 'id_card' => '身份证号', 'gender' => '性别']);
 
@@ -31,7 +31,7 @@ class XlsxImporterTest extends TestCase
         }
     }
 
-    public function test_未映射列不生成校验规则(): void
+    public function test_unmapped_columns_get_no_validation_rules(): void
     {
         $importer = $this->makeImporter(['name' => '姓名']);
 
@@ -42,7 +42,7 @@ class XlsxImporterTest extends TestCase
         self::assertArrayNotHasKey('gender', $rules);
     }
 
-    public function test_科学计数法透传值行级失败并给出中文原因(): void
+    public function test_scientific_notation_value_fails_row_with_chinese_reason(): void
     {
         $importer = $this->makeImporter(['name' => '姓名', 'id_card' => '身份证号', 'gender' => '性别']);
 
@@ -63,7 +63,7 @@ class XlsxImporterTest extends TestCase
         }
     }
 
-    public function test_文本形态_18_位身份证正常通过检测(): void
+    public function test_text_form_18_digit_id_card_passes_check(): void
     {
         $importerClass = FixtureImporter::class;
         $import = new Import;
@@ -79,7 +79,6 @@ class XlsxImporterTest extends TestCase
 
         self::assertEquals('441302199001011234', $importer->getData()['id_card']);
 
-        // 完整走通 __invoke（校验 + 落库）
         self::assertDatabaseHas('fixture_members', [
             'name' => '张三',
             'id_card' => '441302199001011234',
@@ -87,7 +86,7 @@ class XlsxImporterTest extends TestCase
         ]);
     }
 
-    public function test_失败清单下载器默认覆写为_xlsx(): void
+    public function test_failed_rows_downloader_defaults_to_xlsx(): void
     {
         self::assertInstanceOf(
             XlsxFailedRowsDownloader::class,

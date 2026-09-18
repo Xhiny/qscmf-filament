@@ -10,7 +10,7 @@ use Quansitech\Cmf\Import\Tests\TestCase;
 
 class XlsxImportColumnTest extends TestCase
 {
-    public function test_继承官方_import_column_的既有_ap_i_不丢失(): void
+    public function test_inherited_import_column_api_not_lost(): void
     {
         $column = XlsxImportColumn::make('id_card')
             ->label('身份证号')
@@ -21,7 +21,7 @@ class XlsxImportColumnTest extends TestCase
         self::assertSame(['required'], $column->getDataValidationRules());
     }
 
-    public function test_text_lock_默认关闭_开启后可读取(): void
+    public function test_text_lock_defaults_off_and_readable_when_enabled(): void
     {
         $column = XlsxImportColumn::make('id_card');
 
@@ -30,7 +30,7 @@ class XlsxImportColumnTest extends TestCase
         self::assertTrue($column->textLock()->isTextLocked());
     }
 
-    public function test_length_单参为精确长度(): void
+    public function test_length_single_arg_means_exact_length(): void
     {
         $column = XlsxImportColumn::make('id_card')->length(18);
 
@@ -38,7 +38,7 @@ class XlsxImportColumnTest extends TestCase
         self::assertSame(18, $column->getMaxLength());
     }
 
-    public function test_length_双参为区间(): void
+    public function test_length_two_args_means_range(): void
     {
         $column = XlsxImportColumn::make('name')->length(2, 10);
 
@@ -46,7 +46,7 @@ class XlsxImportColumnTest extends TestCase
         self::assertSame(10, $column->getMaxLength());
     }
 
-    public function test_length_仅上限(): void
+    public function test_length_max_only(): void
     {
         $column = XlsxImportColumn::make('remark')->length(null, 200);
 
@@ -54,14 +54,14 @@ class XlsxImportColumnTest extends TestCase
         self::assertSame(200, $column->getMaxLength());
     }
 
-    public function test_length_支持闭包惰性求值(): void
+    public function test_length_supports_closure_lazy_evaluation(): void
     {
         $column = XlsxImportColumn::make('id_card')->length(fn (): int => 18);
 
         self::assertSame(18, $column->getMinLength());
     }
 
-    public function test_dropdown_声明数据源(): void
+    public function test_dropdown_declares_data_source(): void
     {
         $source = ConstSource::make(['男', '女']);
         $column = XlsxImportColumn::make('gender')->dropdown($source);
@@ -69,7 +69,7 @@ class XlsxImportColumnTest extends TestCase
         self::assertSame($source, $column->getDropdownSource());
     }
 
-    public function test_未声明模板校验的列各取值默认(): void
+    public function test_column_without_template_declarations_returns_defaults(): void
     {
         $column = XlsxImportColumn::make('remark');
 
@@ -79,7 +79,7 @@ class XlsxImportColumnTest extends TestCase
         self::assertNull($column->getDropdownSource());
     }
 
-    public function test_query_source_快照求值(): void
+    public function test_query_source_evaluates_snapshot_lazily(): void
     {
         $evaluated = false;
         $source = QuerySource::make(function () use (&$evaluated): array {
