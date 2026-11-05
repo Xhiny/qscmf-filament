@@ -358,6 +358,51 @@ php artisan cmf-media:prune-orphans
 CMF_MEDIA_AUTO_DELETE=false
 ```
 
+## CDN 加速与边缘鉴权（私有桶推荐）
+
+私有桶裸 URL 匿名 403；COS 原生 q-sign 签名打 CDN 域名也会被边缘拒绝（两套验证体系互斥）。
+绑定开启鉴权的 CDN 域名后，`url()` 全部出口（前台 API / 后台预览 / 富文本 / 缩略图）
+按配置动态签发，调用方零改动：
+
+```dotenv
+COS_CDN_URL=https://cdn.example.com
+COS_CDN_AUTH_TYPE=type_d          # 须与控制台一致
+COS_CDN_SIGN_KEY=xxxxxxxx        # 控制台主密钥（6-40 位）
+COS_CDN_QUANTIZE_SECONDS=300      # 可选，时间戳量化桶，页面 URL 稳定
+```
+
+四类型算法对照（拼接顺序与进制互不相同，不可混用；密钥为控制台
+主密钥，备密钥轮换是控制台侧双认概念，签发方不参与）。实测状态：type_a 已有现网控制台印证（TypeA +
+md5 + sign，五段式签名 URL GET 200，query 追加图片处理参数不破坏
+签名）；type_b / type_c / type_d 仅官方文档示例值复算守护，未实测：
+
+| 类型 | URL 形态 | md5（无分隔符直拼） | 时间戳 |
+|------|---------|--------------------|--------|
+| type_a | `?sign=ts-rand-uid-md5` | `md5(uri-ts-rand-uid-pkey)` 密钥最后 | 十进制 |
+| type_b | `/ts/md5/path` | `md5(pkey-ts-uri)` | 北京时间 `YmdHi` |
+| type_c | `/md5/ts/path` | `md5(pkey-uri-ts)` | 十六进制 |
+| type_d | `?sign=md5&t=ts` 参数名可配 | `md5(pkey-uri-ts)` | 十进制（推荐） |
+
+要点：
+
+- **有效期由控制台「鉴权有效时间」全局决定**，代码无法逐 URL 指定；建议
+  ≥ 30 分钟（后台长开页面不刷新不死图），且大于页面缓存 TTL
+- `quantize_seconds` 默认 0（关闭）：仅当需要页面两次渲染输出同一 URL 时
+  开启，且 ≤ 有效时间的 1/4（桶尾签发剩余 = 有效时间 − quantize）；
+  它不影响 CDN 命中率——四种类型官方均自动排除鉴权参数出缓存 key，
+  且优先级高于「缓存键规则」（TypeA 文档 41623 明文）；
+  type_a 的 `rand` 建议配固定非空值（现网验证使用随机 22 位；
+  空串未实测，保守起见配非空）
+- 缩略图等处理参数追加在 query，四种类型签名均不覆盖 query，不受影响；
+  但「过滤参数」仍须选「保留」（否则 imageMogr2 等回源失效）
+- COS 控制台需开启「默认 CDN 回源授权」（允许 CDN 服务账号回源读私有桶）
+- 未配置本段 = 存量行为不变（url 裸拼、`temporaryUrl()` q-sign 兜底）
+
+其它云厂商的 CDN 鉴权按同接口扩展：在 `src/Cdn/<厂商>/` 子命名空间实现
+签名器（腾讯实现位于 `src/Cdn/Tencent/`，TypeA-D 为腾讯口径——其他厂商
+的 A/B/C 类命名与腾讯算法并不相同，不可混用），工厂 match 一行接入 +
+对应 extend 接线 + `disks.<驱动>.cdn` 配置段。
+
 ## COS 排障：404 被吞成「对象不存在」
 
 COS 适配器（overtrue/flysystem-cos）把一切 404 统一当作「对象不存在」返回，
