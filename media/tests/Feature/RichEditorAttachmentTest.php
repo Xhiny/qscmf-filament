@@ -63,6 +63,23 @@ it('saves uploaded attachment with content hash and returns the media id', funct
     Storage::disk('cmf-media-local')->assertExists($media->path);
 });
 
+it('applies the configured rich content rule path （附件落规则目录）', function (): void {
+    config([
+        'cmf-media.rules.rich' => ['mimes' => ['image/*'], 'path' => 'rich'],
+        'cmf-media.rich_content.rule' => 'rich',
+    ]);
+
+    $id = app(MediaFileAttachmentProvider::class)->saveUploadedFileAttachment(imageUpload());
+
+    $media = Media::query()->sole();
+
+    expect($id)->toBe((string) $media->id)
+        ->and($media->path)->toStartWith('rich/')
+        ->and($media->path)->toBe('rich/'.substr($media->hash, 0, 2).'/'.$media->hash.'.jpg');
+
+    Storage::disk('cmf-media-local')->assertExists($media->path);
+});
+
 it('reuses the same media record for duplicate content （去重）', function (): void {
     $provider = app(MediaFileAttachmentProvider::class);
 

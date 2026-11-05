@@ -283,6 +283,8 @@ $media->urlForEntry('export');      // 下载入口（attachment + 原始文件�
 - **环境差异化**：path 写在 config 里可用 `env()` 驱动；path 变更只影响新上传，
   存量记录 URL 不变（记录存完整 key）。切换 env 的部署窗口内“已签未调”的上传
   会 422，重传自愈。
+- **全站统一目录**：与 RichEditor 附件接管的 `rich_content.rule` 指向同一含 path
+  规则，可让所有上传入口（MediaPicker 字段 + 富文本附件）统一落约定目录。
 - **边界**：绕过 check 直接 sign+直传的异常客户端会在云端留下无记录指向的孤儿
   对象（纯存储浪费，无一致性问题）；正常 check→sign 流程不会触发。
 
@@ -308,6 +310,23 @@ class Post extends Model implements HasRichContent
 ```
 
 表单照常使用 `RichEditor::make('content')`，无需额外配置。
+
+### 富文本附件的入口规则（rich_content.rule）
+
+可选：声明 `cmf-media.rules` 中的规则名，富文本拖入/粘贴/附件工具上传的文件按
+该规则落桶（含 `path` 目录段时同样生效）；未配置 = 沿用全局限制（盘根原格式，
+存量行为）：
+
+```php
+// config/cmf-media.php
+'rich_content' => [
+    'rule' => env('CMF_MEDIA_RICH_CONTENT_RULE'),
+],
+```
+
+与「入口目录（path）」配合可让全站上传（MediaPicker 字段 + 富文本附件）统一落
+约定目录：声明一个含 path 的规则，MediaPicker 挂 `->uploadRule()`，
+`rich_content.rule` 指向同一规则即可。
 
 ## 队列与自动清理
 
