@@ -358,6 +358,28 @@ php artisan cmf-media:prune-orphans
 CMF_MEDIA_AUTO_DELETE=false
 ```
 
+## COS 排障：404 被吞成「对象不存在」
+
+COS 适配器（overtrue/flysystem-cos）把一切 404 统一当作「对象不存在」返回，
+无法区分「桶不存在 / 桶不可达」与「对象真不存在」。桶名接线错误时不会报错，
+只会表现为静默假阴性：
+
+| 现象 | 根因方向 |
+|------|----------|
+| 秒传查重恒 miss，同一文件重复上传 | 服务端 `exists()` 打向不存在的桶 |
+| callback 建档校验异常 | `StorageObjectInspector::inspect()` 假阴性 |
+| 删除后云端对象仍残留 | `DeleteMediaJob` 删不到对象 |
+| 前台图片 404（未配 `COS_URL`） | `getObjectUrl()` 返回坏域名 |
+
+排查：浏览器直传正常而服务端全错，先核对桶名接线——本模块的
+`cmf-media-cos` 驱动已内建拆名（bucket 配置仍传全名，适配器收到的
+是裸名 + 显式 domain 兜底），若宿主自行覆盖 driver，务必保持
+「服务端与直传同一 host」（测试套件 `CosDriverHostTest` 守护此约束）。
+
+```bash
+php artisan cmf-media:smoke --disk=cos   # put→exists→get→delete 全绿即接线正确
+```
+
 ## 冒烟测试
 
 ```bash
