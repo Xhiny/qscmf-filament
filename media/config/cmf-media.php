@@ -147,7 +147,15 @@ return [
     |     'activity-image' => ['mimes' => ['image/*'], 'max_size' => 20 * 1024 * 1024],
     |     'doc-preview' => ['mimes' => ['application/pdf'], 'disposition' => 'inline', 'cache_seconds' => 86400],
     |     'export' => ['mimes' => ['application/zip'], 'disposition' => 'attachment'],
+    |     // 可选静态目录段：对象 key 落在约定目录下（多级段即递归目录），
+    |     // 可由环境变量驱动实现预发/生产目录差异化
+    |     't4t' => ['mimes' => ['image/*'], 'path' => env('CMF_MEDIA_T4T_PATH', 't4tstudio')],
     | ],
+    |
+    | path 语法：静态段以 / 分隔（如 t4tstudio、A/B/C），每段仅允许
+    | 字母数字下划线连字符（拒 ..、空段、前后斜杠），总长 ≤200，非法在
+    | 规则解析期报错。目录段不参与判重：同内容重复上传命中既有记录复用
+    | （path 保持首传值）；未声明 path 时对象 key 与存量格式逐字节一致。
     |
     */
 

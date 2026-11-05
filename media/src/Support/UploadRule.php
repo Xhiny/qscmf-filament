@@ -28,6 +28,7 @@ class UploadRule
     /**
      * @param  list<string>  $mimes  允许的 MIME（支持 "image/*" 通配），全局白名单子集
      * @param  'inline'|'attachment'|null  $disposition  访问行为：预览 / 强制下载
+     * @param  string|null  $path  对象 key 的桶内静态目录段（如 t4tstudio、A/B/C），null = 桶根存量格式
      */
     public function __construct(
         public readonly string $name,
@@ -35,6 +36,7 @@ class UploadRule
         public readonly int $maxSize,
         public readonly ?int $cacheSeconds,
         public readonly ?string $disposition,
+        public readonly ?string $path = null,
     ) {}
 
     /**
@@ -76,13 +78,44 @@ class UploadRule
         /** @var mixed $disposition */
         $disposition = $config['disposition'] ?? null;
 
+        /** @var mixed $pathConfig */
+        $pathConfig = $config['path'] ?? null;
+
+        if ($pathConfig !== null && ! is_string($pathConfig)) {
+            throw new InvalidArgumentException("上传规则 {$name} 的 path 必须是字符串");
+        }
+
         return new self(
             name: $name,
             mimes: $mimes,
             maxSize: $maxSize,
             cacheSeconds: isset($config['cache_seconds']) ? max(0, (int) $config['cache_seconds']) : null,
             disposition: in_array($disposition, ['inline', 'attachment'], true) ? $disposition : null,
+            path: is_string($pathConfig) && $pathConfig !== '' ? static::parsePath($pathConfig, $name) : null,
         );
+    }
+
+    /**
+     * 解析并校验静态目录模板：段间以 / 分隔（如 t4tstudio、A/B/C），多级段
+     * 即对象 key 的递归目录（对象存储按多级 key 直写，本地盘由存储层递归
+     * 建目录）。每段仅允许字母数字下划线连字符（天然拒绝 .. 与路径穿越），
+     * 前导/尾斜杠与空段均拒绝；模板总长限制 200（path 列 512 预留余量）。
+     */
+    protected static function parsePath(string $path, string $ruleName): string
+    {
+        if (strlen($path) > 200) {
+            throw new InvalidArgumentException("上传规则 {$ruleName} 的 path 模板超过 200 字符上限");
+        }
+
+        foreach (explode('/', $path) as $segment) {
+            if (preg_match('/^[A-Za-z0-9_-]+$/', $segment) !== 1) {
+                throw new InvalidArgumentException(
+                    "上传规则 {$ruleName} 的 path「{$path}」非法：每段仅允许字母数字下划线连字符，禁止 ..、空段、前后斜杠"
+                );
+            }
+        }
+
+        return $path;
     }
 
     /**

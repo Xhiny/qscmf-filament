@@ -75,17 +75,23 @@ class Media extends Model
     }
 
     /**
-     * 对象 key：{hash前2位}/{hash}[.{disposition}].{ext}。
+     * 对象 key：[{directory}/]{hash前2位}/{hash}[.{disposition}].{ext}。
      *
      * disposition（inline / attachment）参与 key 生成：同一内容按访问行为各存
      * 一个对象，各自在上传时写入 Content-Disposition 元数据（云厂商 response-*
      * URL 覆盖实测不可靠）。无 disposition 时保持原 key 格式，存量对象兼容。
+     *
+     * directory 为入口规则的静态目录段（如 t4tstudio、A/B/C，多级段即递归
+     * 目录）：目录段不参与判重，仅决定新上传的落点；空 = 桶根原格式，
+     * 与存量逐字节一致。
      */
-    public static function objectKey(string $hash, string $ext, string $disposition = ''): string
+    public static function objectKey(string $hash, string $ext, string $disposition = '', string $directory = ''): string
     {
-        return substr($hash, 0, 2).'/'.$hash
+        $key = substr($hash, 0, 2).'/'.$hash
             .($disposition === '' ? '' : '.'.$disposition)
             .($ext === '' ? '' : '.'.$ext);
+
+        return $directory === '' ? $key : $directory.'/'.$key;
     }
 
     /**

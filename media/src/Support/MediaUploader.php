@@ -54,7 +54,7 @@ class MediaUploader
         $name = $originalName ?? $file->getClientOriginalName();
         $ext = MediaManager::safeExtension($name);
         $disposition = $rule?->disposition ?? '';
-        $key = Media::objectKey($hash, $ext, $disposition);
+        $key = Media::objectKey($hash, $ext, $disposition, $rule?->path ?? '');
         $driver = MediaManager::driver();
         $disk = Storage::disk(Media::diskName($driver));
 
