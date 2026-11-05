@@ -88,7 +88,7 @@ class MediaUploadController extends Controller
 
         $ext = MediaManager::safeExtension($data['name']);
         // disposition 参与对象 key：同一内容按访问行为各存一个对象（去重维度）
-        $key = Media::objectKey($data['hash'], $ext, $rule?->disposition ?? '');
+        $key = Media::objectKey($data['hash'], $ext, $rule?->disposition ?? '', $rule?->path ?? '');
         $driver = MediaManager::driver();
 
         // local：无需云签名，直传应用服务器的 upload 端点（POST multipart）；
@@ -181,7 +181,7 @@ class MediaUploadController extends Controller
 
         // 对象 key 由服务端规则生成（含 disposition 维度），防止客户端伪造路径冒领他人文件
         $ext = MediaManager::safeExtension($data['name']);
-        $expectedKey = Media::objectKey($data['hash'], $ext, $rule?->disposition ?? '');
+        $expectedKey = Media::objectKey($data['hash'], $ext, $rule?->disposition ?? '', $rule?->path ?? '');
 
         if ($data['path'] !== $expectedKey) {
             throw ValidationException::withMessages(['path' => '对象路径与内容哈希不符']);

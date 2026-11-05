@@ -54,8 +54,15 @@ class MediaUploader
         $name = $originalName ?? $file->getClientOriginalName();
         $ext = MediaManager::safeExtension($name);
         $disposition = $rule?->disposition ?? '';
-        $key = Media::objectKey($hash, $ext, $disposition);
+        $key = Media::objectKey($hash, $ext, $disposition, $rule?->path ?? '');
         $driver = MediaManager::driver();
+
+        // 先查重再落盘：命中直接复用，避免跨目录重复上传遗留无记录指向的孤儿对象
+        $existing = $this->findExisting($hash, $disposition);
+        if ($existing instanceof Media) {
+            return $this->reuseExisting($existing, $key, $driver);
+        }
+
         $disk = Storage::disk(Media::diskName($driver));
 
         if (! $disk->exists($key)) {
@@ -105,19 +112,11 @@ class MediaUploader
         /** @var class-string<Media> $model */
         $model = config('cmf-media.model', Media::class);
 
-        // 含软删记录：同 hash + disposition 重复上传直接复用并恢复
         /** @var Media|null $existing */
-        $existing = $model::withTrashed()
-            ->where('hash', $data['hash'])
-            ->where('disposition', $disposition)
-            ->first();
+        $existing = $this->findExisting($data['hash'], $disposition);
 
         if ($existing instanceof Media) {
-            if ($existing->trashed()) {
-                $existing->restore();
-            }
-
-            return $existing;
+            return $this->reuseExisting($existing, $key, $driver);
         }
 
         try {
@@ -142,6 +141,8 @@ class MediaUploader
                 ->where('hash', $data['hash'])
                 ->where('disposition', $disposition)
                 ->firstOrFail();
+
+            return $this->reuseExisting($media, $key, $driver);
         }
 
         if ($media->trashed()) {
@@ -149,5 +150,36 @@ class MediaUploader
         }
 
         return $media;
+    }
+
+    /**
+     * 按 hash + disposition 查已有记录（含软删）。
+     */
+    private function findExisting(string $hash, string $disposition): ?Media
+    {
+        /** @var class-string<Media> $model */
+        $model = config('cmf-media.model', Media::class);
+
+        /** @var Media|null */
+        return $model::withTrashed()
+            ->where('hash', $hash)
+            ->where('disposition', $disposition)
+            ->first();
+    }
+
+    /**
+     * 复用已有记录；本次写入的 key 与记录 path 不同时删除多余对象（孤儿）。
+     */
+    private function reuseExisting(Media $existing, string $key, string $driver): Media
+    {
+        if ($existing->trashed()) {
+            $existing->restore();
+        }
+
+        if ($existing->path !== $key) {
+            Storage::disk(Media::diskName($driver))->delete($key);
+        }
+
+        return $existing;
     }
 }

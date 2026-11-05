@@ -255,6 +255,39 @@ $media->urlForEntry('export');      // 下载入口（attachment + 原始文件�
   （如 `TOS_URL`）后 `inline` 才生效；`attachment` 在默认域名下即可生效。配置方法见
   「环境配置（.env）→ 自定义访问域名」。
 
+### 入口目录（path）
+
+规则可声明可选的 `path` 静态目录段，对象 key 落在约定目录下（共享桶按项目/业务
+归拢的场景）：
+
+```php
+'rules' => [
+    // 多级段即递归目录：A/B/C/{hash前2位}/{hash}.{ext}
+    'archive' => ['mimes' => ['image/*'], 'path' => 'A/B/C'],
+    // 环境差异化：预发/生产目录由环境变量驱动
+    't4t'     => ['mimes' => ['image/*'], 'path' => env('CMF_MEDIA_T4T_PATH', 't4tstudio')],
+],
+```
+
+语义与约束：
+
+- **语法**：静态段以 `/` 分隔，每段仅允许字母数字下划线连字符（拒 `..`、空段、
+  前后斜杠），总长 ≤200，非法在规则解析期报错（fail fast）。
+- **递归目录**：多级段即对象 key 的多级路径——对象存储按多级 key 直接写入，
+  local 驱动由存储层递归建目录，全程无“建目录”动作。
+- **防伪不变**：目录段由服务端从规则取得，客户端只能选规则名；callback 仍按
+  「重算 expectedKey（含 path）全等比对」防伪，伪造目录段直接 422。
+- **判重不变**：path 不参与判重（键仍为 hash + disposition）——同内容重复上传
+  命中既有记录复用，记录的 path 保持首传值（指向旧文件路径）；目录是“上传时的
+  落点”而非归属边界，同内容先经他入口传过时本次入口目录下不会有新对象。
+- **环境差异化**：path 写在 config 里可用 `env()` 驱动；path 变更只影响新上传，
+  存量记录 URL 不变（记录存完整 key）。切换 env 的部署窗口内“已签未调”的上传
+  会 422，重传自愈。
+- **全站统一目录**：与 RichEditor 附件接管的 `rich_content.rule` 指向同一含 path
+  规则，可让所有上传入口（MediaPicker 字段 + 富文本附件）统一落约定目录。
+- **边界**：绕过 check 直接 sign+直传的异常客户端会在云端留下无记录指向的孤儿
+  对象（纯存储浪费，无一致性问题）；正常 check→sign 流程不会触发。
+
 ## RichEditor 富文本接管
 
 RichEditor 的图片 / 附件上传默认落在 Filament 配置的 disk 上，无去重与引用管理。挂载
@@ -277,6 +310,23 @@ class Post extends Model implements HasRichContent
 ```
 
 表单照常使用 `RichEditor::make('content')`，无需额外配置。
+
+### 富文本附件的入口规则（rich_content.rule）
+
+可选：声明 `cmf-media.rules` 中的规则名，富文本拖入/粘贴/附件工具上传的文件按
+该规则落桶（含 `path` 目录段时同样生效）；未配置 = 沿用全局限制（盘根原格式，
+存量行为）：
+
+```php
+// config/cmf-media.php
+'rich_content' => [
+    'rule' => env('CMF_MEDIA_RICH_CONTENT_RULE'),
+],
+```
+
+与「入口目录（path）」配合可让全站上传（MediaPicker 字段 + 富文本附件）统一落
+约定目录：声明一个含 path 的规则，MediaPicker 挂 `->uploadRule()`，
+`rich_content.rule` 指向同一规则即可。
 
 ## 队列与自动清理
 
@@ -306,6 +356,28 @@ php artisan cmf-media:prune-orphans
 
 ```dotenv
 CMF_MEDIA_AUTO_DELETE=false
+```
+
+## COS 排障：404 被吞成「对象不存在」
+
+COS 适配器（overtrue/flysystem-cos）把一切 404 统一当作「对象不存在」返回，
+无法区分「桶不存在 / 桶不可达」与「对象真不存在」。桶名接线错误时不会报错，
+只会表现为静默假阴性：
+
+| 现象 | 根因方向 |
+|------|----------|
+| 秒传查重恒 miss，同一文件重复上传 | 服务端 `exists()` 打向不存在的桶 |
+| callback 建档校验异常 | `StorageObjectInspector::inspect()` 假阴性 |
+| 删除后云端对象仍残留 | `DeleteMediaJob` 删不到对象 |
+| 前台图片 404（未配 `COS_URL`） | `getObjectUrl()` 返回坏域名 |
+
+排查：浏览器直传正常而服务端全错，先核对桶名接线——本模块的
+`cmf-media-cos` 驱动已内建拆名（bucket 配置仍传全名，适配器收到的
+是裸名 + 显式 domain 兜底），若宿主自行覆盖 driver，务必保持
+「服务端与直传同一 host」（测试套件 `CosDriverHostTest` 守护此约束）。
+
+```bash
+php artisan cmf-media:smoke --disk=cos   # put→exists→get→delete 全绿即接线正确
 ```
 
 ## 冒烟测试

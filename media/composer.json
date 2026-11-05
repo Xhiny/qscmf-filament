@@ -11,7 +11,8 @@
         "league/flysystem-aws-s3-v3": "^3.29",
         "orchestra/testbench": "^11.0",
         "pestphp/pest": "^4.0",
-        "pestphp/pest-plugin-laravel": "^4.0"
+        "pestphp/pest-plugin-laravel": "^4.0",
+        "overtrue/flysystem-cos": "^5.0"
     },
     "suggest": {
         "league/flysystem-aws-s3-v3": "TOS（火山引擎对象存储）驱动需要：S3 兼容适配器（含 aws/aws-sdk-php）",

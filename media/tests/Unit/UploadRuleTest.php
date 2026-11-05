@@ -136,3 +136,45 @@ it('reports access behavior presence', function (): void {
         ->and(UploadRule::resolve('pdf-inline')->hasAccessBehavior())->toBeTrue()
         ->and(UploadRule::resolve('export-zip')->hasAccessBehavior())->toBeTrue();
 });
+
+it('resolves optional static path （单级与多级目录段）', function (): void {
+    config(['cmf-media.rules.with-path' => ['mimes' => ['image/*'], 'path' => 't4tstudio'],
+        'cmf-media.rules.deep-path' => ['mimes' => ['image/*'], 'path' => 'A/B/C-01_d']]);
+
+    expect(UploadRule::resolve('with-path')->path)->toBe('t4tstudio')
+        ->and(UploadRule::resolve('deep-path')->path)->toBe('A/B/C-01_d')
+        ->and(UploadRule::resolve('img-10')->path)->toBeNull();
+});
+
+it('treats empty path string as unset （存量桶根语义）', function (): void {
+    config(['cmf-media.rules.empty-path' => ['mimes' => ['image/*'], 'path' => '']]);
+
+    expect(UploadRule::resolve('empty-path')->path)->toBeNull();
+});
+
+it('rejects non-string path config', function (): void {
+    config(['cmf-media.rules.bad-type' => ['mimes' => ['image/*'], 'path' => 123]]);
+
+    UploadRule::resolve('bad-type');
+})->throws(InvalidArgumentException::class, 'path 必须是字符串');
+
+it('rejects illegal path templates （逐段白名单）', function (string $path): void {
+    config(['cmf-media.rules.bad-path' => ['mimes' => ['image/*'], 'path' => $path]]);
+
+    UploadRule::resolve('bad-path');
+})->with([
+    '../escape',
+    '/abs',
+    'trailing/',
+    'a//b',
+    'a/../b',
+    '中文目录',
+    'a b',
+    'a.b',
+])->throws(InvalidArgumentException::class, '非法');
+
+it('rejects path templates over 200 chars （总长预算）', function (): void {
+    config(['cmf-media.rules.long-path' => ['mimes' => ['image/*'], 'path' => str_repeat('x', 201)]]);
+
+    UploadRule::resolve('long-path');
+})->throws(InvalidArgumentException::class, '超过 200 字符上限');

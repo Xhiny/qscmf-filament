@@ -203,13 +203,19 @@ class CmfMediaServiceProvider extends PackageServiceProvider
             /** @var string $bucket 形如 example-1250000000，末段为 appid */
             $bucket = (string) ($config['bucket'] ?? '');
             $appId = str_contains($bucket, '-') ? substr($bucket, (int) strrpos($bucket, '-') + 1) : '';
+            $name = $appId !== '' ? substr($bucket, 0, (int) strrpos($bucket, '-')) : $bucket;
 
             $adapter = new \Overtrue\Flysystem\Cos\CosAdapter([
-                'bucket' => $bucket,
+                // flysystem-cos 的 host 模板为 <bucket>-<app_id>，bucket 必须传不含
+                // appid 的裸名；传全名会拼出双重 appid 域名（桶不存在，一切服务端
+                // 操作 404，且被适配器吞成“对象不存在”的静默假阴性）
+                'bucket' => $name,
                 'app_id' => $appId,
                 'region' => $config['region'] ?? 'ap-guangzhou',
                 'secret_id' => $config['secret_id'] ?? '',
                 'secret_key' => $config['secret_key'] ?? '',
+                // 兜底：Client 支持显式 domain，直接绕过模板拼接，拆分异常也不影响 host
+                'domain' => sprintf('%s.cos.%s.myqcloud.com', $bucket, $config['region'] ?? 'ap-guangzhou'),
             ]);
 
             return new FilesystemAdapter(new Filesystem($adapter), $adapter, $config);

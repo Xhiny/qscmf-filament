@@ -12,6 +12,7 @@ use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
 use LogicException;
 use Quansitech\Cmf\Media\Models\Media;
 use Quansitech\Cmf\Media\Support\MediaUploader;
+use Quansitech\Cmf\Media\Support\UploadRule;
 
 /**
  * RichEditor 文件附件接管（Filament v5 FileAttachmentProvider）：
@@ -66,10 +67,20 @@ class MediaFileAttachmentProvider implements FileAttachmentProvider
     /**
      * 保存上传附件：服务端计算内容 hash → 命中已有记录直接复用（秒传去重），
      * 未命中落盘建档。返回 media id 字符串作为编辑器图片节点的附件 id。
+     *
+     * cmf-media.rich_content.rule 可选声明入口规则（如含 path 的规则），
+     * 未配置 = 沿用全局限制（存量行为）。
      */
     public function saveUploadedFileAttachment(TemporaryUploadedFile $file): mixed
     {
-        $media = $this->uploader->store($file, uploaderId: Auth::user()?->getAuthIdentifier());
+        /** @var mixed $ruleName */
+        $ruleName = config('cmf-media.rich_content.rule');
+
+        $media = $this->uploader->store(
+            $file,
+            uploaderId: Auth::user()?->getAuthIdentifier(),
+            rule: UploadRule::find(is_string($ruleName) ? $ruleName : null),
+        );
 
         return (string) $media->id;
     }
