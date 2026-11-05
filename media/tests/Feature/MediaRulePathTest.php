@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Quansitech\Cmf\Media\Models\Media;
+use Quansitech\Cmf\Media\Support\MediaUploader;
+use Quansitech\Cmf\Media\Support\UploadRule;
 
 /**
  * 入口规则静态目录（rules.*.path）全链路：
@@ -161,4 +164,66 @@ it('stores local uploads under the multi-level rule path （递归目录落盘�
         ->assertJsonPath('media.path', $expectedKey);
 
     expect(Storage::disk('cmf-media-local')->exists($expectedKey))->toBeTrue();
+});
+
+it('re-uploading the same file via a path rule leaves no orphan object（跨目录重复不产生孤儿）', function (): void {
+    actingAsTestUser();
+    $this->withHeaders(['Accept' => 'application/json']);
+    Storage::fake('cmf-media-local');
+    config(['cmf-media.default' => 'local']);
+
+    $uploader = app(MediaUploader::class);
+    $rule = UploadRule::resolve('t4t');
+
+    // 首传：无 path 规则 → 根目录 hash 分片
+    $first = $uploader->store(UploadedFile::fake()->image('photo.jpg', 120, 80));
+    $rootKey = substr($first->hash, 0, 2).'/'.$first->hash.'.'.$first->ext;
+    expect($first->path)->toBe($rootKey);
+
+    // 同一文件经带 path 的规则再次上传（RichEditor 附件无 check 前置，直接 store）
+    Log::spy();
+    $second = $uploader->store(
+        UploadedFile::fake()->image('photo.jpg', 120, 80),
+        rule: $rule,
+    );
+
+    // 复用首传记录，path 冻结；path 不同时记日志（PR 描述承诺的行为）
+    expect($second->is($first))->toBeTrue()
+        ->and($second->path)->toBe($rootKey);
+    Log::shouldHaveReceived('warning')
+        ->once()
+        ->withArgs(fn (string $message): bool => str_contains($message, '复用已有媒体记录'));
+
+    // 磁盘上只有首传对象：目录下没有第二份文件，也没有孤儿
+    expect(Storage::disk('cmf-media-local')->allFiles())->toBe([$rootKey]);
+});
+
+it('deletes the just-written object when firstOrCreate reuses a record with a different path（并发窗口兜底）', function (): void {
+    actingAsTestUser();
+    Storage::fake('cmf-media-tos');
+
+    // 已有记录：无 path 规则时首传建档
+    $first = app(MediaUploader::class)->store(UploadedFile::fake()->image('photo.jpg', 120, 80));
+    $rootKey = $first->path;
+    $richKey = 't4tstudio/'.substr($first->hash, 0, 2).'/'.$first->hash.'.'.$first->ext;
+
+    // 并发窗口：对象已按新 path 写入（如 check 之后、建档之前另一路已完成上传）
+    Storage::disk('cmf-media-tos')->put($richKey, 'just-written');
+    expect(Storage::disk('cmf-media-tos')->exists($richKey))->toBeTrue();
+
+    Log::spy();
+    $media = (new MediaUploader)->firstOrCreate(
+        'tos',
+        $richKey,
+        ['hash' => $first->hash, 'name' => 'photo.jpg', 'mime' => 'image/jpeg', 'size' => $first->size],
+        $first->ext,
+        null,
+    );
+
+    // 复用旧记录，本次多写的对象被删除而非遗留成孤儿；删除动作记日志
+    expect($media->is($first))->toBeTrue()
+        ->and($media->path)->toBe($rootKey)
+        ->and(Storage::disk('cmf-media-tos')->exists($richKey))->toBeFalse()
+        ->and(Storage::disk('cmf-media-tos')->exists($rootKey))->toBeTrue();
+    Log::shouldHaveReceived('warning')->once();
 });
