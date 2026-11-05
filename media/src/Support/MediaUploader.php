@@ -6,7 +6,6 @@ namespace Quansitech\Cmf\Media\Support;
 
 use Illuminate\Database\QueryException;
 use Illuminate\Http\UploadedFile;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 use Quansitech\Cmf\Media\Models\Media;
@@ -58,9 +57,7 @@ class MediaUploader
         $key = Media::objectKey($hash, $ext, $disposition, $rule?->path ?? '');
         $driver = MediaManager::driver();
 
-        // 先查后写：命中已有记录（含软删）直接复用，不落盘新对象。跨目录重复
-        // 上传（如 RichEditor 附件无 check 前置）不能先写再查——那会在复用旧
-        // 记录的同时把新 path 下的对象留给云上，成为清理任务永远扫不到的孤儿。
+        // 先查重再落盘：命中直接复用，避免跨目录重复上传遗留无记录指向的孤儿对象
         $existing = $this->findExisting($hash, $disposition);
         if ($existing instanceof Media) {
             return $this->reuseExisting($existing, $key, $driver);
@@ -115,7 +112,6 @@ class MediaUploader
         /** @var class-string<Media> $model */
         $model = config('cmf-media.model', Media::class);
 
-        // 含软删记录：同 hash + disposition 重复上传直接复用并恢复
         /** @var Media|null $existing */
         $existing = $this->findExisting($data['hash'], $disposition);
 
@@ -172,9 +168,7 @@ class MediaUploader
     }
 
     /**
-     * 复用已有记录：恢复软删；若本次写入的对象 key 与记录冻结的 path 不同
-     * （跨目录重复上传、或查重与建档之间的并发窗口），删除本次多余对象并
-     * 记日志——否则它会成为无记录指向、清理任务也扫不到的孤儿。
+     * 复用已有记录；本次写入的 key 与记录 path 不同时删除多余对象（孤儿）。
      */
     private function reuseExisting(Media $existing, string $key, string $driver): Media
     {
@@ -184,11 +178,6 @@ class MediaUploader
 
         if ($existing->path !== $key) {
             Storage::disk(Media::diskName($driver))->delete($key);
-            Log::warning('cmf-media: 复用已有媒体记录，删除本次重复写入的对象', [
-                'media_id' => $existing->getKey(),
-                'record_path' => $existing->path,
-                'orphan_key' => $key,
-            ]);
         }
 
         return $existing;

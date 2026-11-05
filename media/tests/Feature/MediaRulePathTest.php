@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Quansitech\Cmf\Media\Models\Media;
 use Quansitech\Cmf\Media\Support\MediaUploader;
@@ -181,18 +180,13 @@ it('re-uploading the same file via a path rule leaves no orphan object（跨目�
     expect($first->path)->toBe($rootKey);
 
     // 同一文件经带 path 的规则再次上传（RichEditor 附件无 check 前置，直接 store）
-    Log::spy();
     $second = $uploader->store(
         UploadedFile::fake()->image('photo.jpg', 120, 80),
         rule: $rule,
     );
 
-    // 复用首传记录，path 冻结；path 不同时记日志（PR 描述承诺的行为）
     expect($second->is($first))->toBeTrue()
         ->and($second->path)->toBe($rootKey);
-    Log::shouldHaveReceived('warning')
-        ->once()
-        ->withArgs(fn (string $message): bool => str_contains($message, '复用已有媒体记录'));
 
     // 磁盘上只有首传对象：目录下没有第二份文件，也没有孤儿
     expect(Storage::disk('cmf-media-local')->allFiles())->toBe([$rootKey]);
@@ -211,7 +205,6 @@ it('deletes the just-written object when firstOrCreate reuses a record with a di
     Storage::disk('cmf-media-tos')->put($richKey, 'just-written');
     expect(Storage::disk('cmf-media-tos')->exists($richKey))->toBeTrue();
 
-    Log::spy();
     $media = (new MediaUploader)->firstOrCreate(
         'tos',
         $richKey,
@@ -220,10 +213,9 @@ it('deletes the just-written object when firstOrCreate reuses a record with a di
         null,
     );
 
-    // 复用旧记录，本次多写的对象被删除而非遗留成孤儿；删除动作记日志
+    // 复用旧记录，本次多写的对象被删除而非遗留成孤儿
     expect($media->is($first))->toBeTrue()
         ->and($media->path)->toBe($rootKey)
         ->and(Storage::disk('cmf-media-tos')->exists($richKey))->toBeFalse()
         ->and(Storage::disk('cmf-media-tos')->exists($rootKey))->toBeTrue();
-    Log::shouldHaveReceived('warning')->once();
 });
