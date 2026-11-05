@@ -10,7 +10,7 @@ use Quansitech\Cmf\Import\Xlsx\XlsxToCsvConverter;
 use ZipArchive;
 
 /**
- * 归一规则矩阵回归（任务 5.2 的转换器层）：科学计数法 / 截断 / 日期 / 1904 日历 /
+ * 归一规则矩阵回归（转换器层）：科学计数法 / 截断 / 日期 / 1904 日历 /
  * 公式 / 合并单元格 / 空行 / 多 sheet / 伪 xlsx。
  */
 class XlsxToCsvConverterTest extends TestCase
@@ -42,7 +42,7 @@ class XlsxToCsvConverterTest extends TestCase
         return $rows;
     }
 
-    public function test_表头行尾部幽灵格式列被裁剪(): void
+    public function test_header_row_trailing_ghost_format_columns_trimmed(): void
     {
         // 复刻真实踩坑文件形态：9 列表头 + K2 带格式空单元格 + K 列自定义列宽
         // → 落盘 dimension A1:K2，openspout 按声明宽度把表头行补齐为 11 格
@@ -83,7 +83,7 @@ class XlsxToCsvConverterTest extends TestCase
         self::assertMatchesRegularExpression('/<row r="1"[^>]*spans="1:11"/', $xml);
     }
 
-    public function test_纯空白字符行按空行跳过且单元格值不被_trim(): void
+    public function test_whitespace_only_row_skipped_and_values_not_trimmed(): void
     {
         $path = XlsxBuilder::make()
             ->setText('A1', '姓名')
@@ -101,7 +101,7 @@ class XlsxToCsvConverterTest extends TestCase
         self::assertSame([' 张三 ', ' ok '], $rows[1]);
     }
 
-    public function test_首个非空行仅一格内容时提示未找到表头行(): void
+    public function test_single_cell_first_row_reports_missing_header(): void
     {
         // 标题行形态：若误当表头会顶掉真表头导致数据列整体错位
         $path = XlsxBuilder::make()
@@ -117,7 +117,7 @@ class XlsxToCsvConverterTest extends TestCase
         $this->converter->convert($path);
     }
 
-    public function test_表头中间空列标题不参与裁剪_列保持原位(): void
+    public function test_header_middle_empty_columns_not_trimmed_keep_position(): void
     {
         $path = XlsxBuilder::make()
             ->setText('A1', '姓名')
@@ -134,7 +134,7 @@ class XlsxToCsvConverterTest extends TestCase
         self::assertSame(['张三', '', '', '备注内容'], $rows[1]);
     }
 
-    public function test_表头与文本数据原样输出(): void
+    public function test_headers_and_text_data_output_as_is(): void
     {
         $path = XlsxBuilder::make()
             ->setText('A1', '姓名')
@@ -149,7 +149,7 @@ class XlsxToCsvConverterTest extends TestCase
         self::assertSame(['张三', '441302199001011234'], $rows[1]);
     }
 
-    public function test_表头首尾空白被剔除以保证自动映射(): void
+    public function test_header_outer_whitespace_trimmed_for_auto_mapping(): void
     {
         $path = XlsxBuilder::make()
             ->setText('A1', ' 姓名 ')
@@ -162,7 +162,7 @@ class XlsxToCsvConverterTest extends TestCase
         self::assertSame(['姓名', '备注'], $rows[0]);
     }
 
-    public function test_数值单元格字符串化且_15_位以内精度完整(): void
+    public function test_numeric_cell_stringified_with_full_precision_under_15_digits(): void
     {
         $path = XlsxBuilder::make()
             ->setText('A1', '工号')
@@ -178,7 +178,7 @@ class XlsxToCsvConverterTest extends TestCase
         self::assertSame(['99.5', ''], $rows[2]);
     }
 
-    public function test_超长数值单元格透传科学计数法字样(): void
+    public function test_oversized_numeric_cell_passed_through_as_scientific_notation(): void
     {
         // 以 float 写入模拟真实 Excel 行为（Excel 数值单元格即 double 存储）
         $path = XlsxBuilder::make()
@@ -192,7 +192,7 @@ class XlsxToCsvConverterTest extends TestCase
         self::assertStringContainsString('E+', $rows[1][0]);
     }
 
-    public function test_文本形态长数字不受影响(): void
+    public function test_text_form_long_number_untouched(): void
     {
         $path = XlsxBuilder::make()
             ->setText('A1', '工号')
@@ -205,7 +205,7 @@ class XlsxToCsvConverterTest extends TestCase
         self::assertSame(['441302199001011234', ''], $rows[1]);
     }
 
-    public function test_日期单元格转为_y_m_d_h_i_s(): void
+    public function test_date_cell_converted_to_datetime_string(): void
     {
         $path = XlsxBuilder::make()
             ->setText('A1', '登记时间')
@@ -219,7 +219,7 @@ class XlsxToCsvConverterTest extends TestCase
         self::assertSame(['2026-01-05 14:30:00', '张三'], $rows[1]);
     }
 
-    public function test_1904_日历日期自动换算(): void
+    public function test_1904_calendar_date_converted_automatically(): void
     {
         $path = XlsxBuilder::make()
             ->calendar1904()
@@ -235,7 +235,7 @@ class XlsxToCsvConverterTest extends TestCase
         self::assertSame(['2026-01-05 14:30:00', '张三'], $rows[1]);
     }
 
-    public function test_公式取缓存值_无缓存按_0_处理(): void
+    public function test_formula_uses_cache_value_or_zero_without_cache(): void
     {
         $path = XlsxBuilder::make()
             ->setNumeric('A1', 1)
@@ -271,7 +271,7 @@ class XlsxToCsvConverterTest extends TestCase
         $zip->close();
     }
 
-    public function test_布尔单元格转为_tru_e_false(): void
+    public function test_boolean_cell_converted_to_true_false(): void
     {
         $builder = XlsxBuilder::make();
         $builder->sheet()->setCellValue('A1', true);
@@ -282,7 +282,7 @@ class XlsxToCsvConverterTest extends TestCase
         self::assertSame(['TRUE', '备注'], $rows[0]);
     }
 
-    public function test_全空行被跳过(): void
+    public function test_fully_empty_rows_skipped(): void
     {
         $path = XlsxBuilder::make()
             ->setText('A1', '姓名')
@@ -299,7 +299,7 @@ class XlsxToCsvConverterTest extends TestCase
         self::assertSame(['李四', ''], $rows[2]);
     }
 
-    public function test_数据行长度自动对齐表头列数(): void
+    public function test_data_rows_padded_to_header_column_count(): void
     {
         $path = XlsxBuilder::make()
             ->setText('A1', '姓名')
@@ -313,7 +313,7 @@ class XlsxToCsvConverterTest extends TestCase
         self::assertSame(['张三', '', ''], $rows[1]);
     }
 
-    public function test_合并单元格同行取左上值(): void
+    public function test_merged_cells_take_anchor_value_same_row(): void
     {
         $builder = XlsxBuilder::make();
         $builder
@@ -332,7 +332,7 @@ class XlsxToCsvConverterTest extends TestCase
         self::assertSame(['张三', '兼职工', '兼职工'], $rows[1]);
     }
 
-    public function test_合并单元格跨行取左上值(): void
+    public function test_merged_cells_take_anchor_value_across_rows(): void
     {
         $builder = XlsxBuilder::make();
         $builder
@@ -351,9 +351,9 @@ class XlsxToCsvConverterTest extends TestCase
         self::assertSame(['技术部', '李四'], $rows[2]);
     }
 
-    public function test_合并单元格跨三行填充_末行不丢锚点值(): void
+    public function test_merged_cells_three_rows_last_row_keeps_anchor_value(): void
     {
-        // A2:A4 合并：逐行驱逐上一行锚点的旧实现使第 4 行取不到值（PR #2 评审缺陷 1）
+        // A2:A4 合并：末行锚点值须从缓存的锚点行取，逐行驱逐旧值的实现会在此丢值
         $builder = XlsxBuilder::make();
         $builder
             ->setText('A1', '部门')
@@ -373,7 +373,7 @@ class XlsxToCsvConverterTest extends TestCase
         self::assertSame(['技术部', '王五'], $rows[3], '跨 ≥3 行合并的末行须填充锚点值');
     }
 
-    public function test_多_sheet_固定读第一个(): void
+    public function test_multi_sheet_reads_first_one_only(): void
     {
         $builder = XlsxBuilder::make();
         $builder
@@ -392,7 +392,7 @@ class XlsxToCsvConverterTest extends TestCase
         self::assertSame(['第一数据', ''], $rows[1]);
     }
 
-    public function test_伪_xlsx_抛业务友好异常(): void
+    public function test_fake_xlsx_throws_friendly_exception(): void
     {
         $path = (string) tempnam(sys_get_temp_dir(), 'fake-xlsx-');
         file_put_contents($path, 'id,name'.PHP_EOL.'1,张三');
@@ -403,7 +403,7 @@ class XlsxToCsvConverterTest extends TestCase
         $this->converter->convert($path);
     }
 
-    public function test_空文件抛业务友好异常(): void
+    public function test_empty_file_throws_friendly_exception(): void
     {
         $path = XlsxBuilder::make()->toTempFile();
 

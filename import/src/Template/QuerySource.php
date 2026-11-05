@@ -5,10 +5,8 @@ namespace Quansitech\Cmf\Import\Template;
 use Closure;
 
 /**
- * 数据库查询数据源：模板生成时执行闭包，查询结果快照为下拉选项
- * （如区划字典）。选项写入隐藏 sheet 范围引用，不受内联列表 255 字符
- * 限制；上限 2000 行防模板失控（全量韶关村级 1468 项在限内，2026-09-17
- * 由 255 上调），超出截断。
+ * 数据库查询数据源：模板生成时执行闭包，结果快照为下拉选项（隐藏 sheet 范围
+ * 引用，不受内联列表 255 字符限制）；上限 2000 行防模板失控，超出截断。
  */
 class QuerySource implements DropdownSource
 {

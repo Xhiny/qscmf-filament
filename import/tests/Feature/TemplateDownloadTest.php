@@ -13,7 +13,7 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class TemplateDownloadTest extends TestCase
 {
-    public function test_模板下载响应_能力出口(): void
+    public function test_template_download_response(): void
     {
         $response = TemplateDownload::downloadResponse(FixtureImporter::class);
 
@@ -39,7 +39,7 @@ class TemplateDownloadTest extends TestCase
         self::assertSame('姓名', $sheet->getCell('A1')->getValue());
     }
 
-    public function test_容器绑定默认驱动为_php_spreadsheet(): void
+    public function test_container_binds_php_spreadsheet_as_default_driver(): void
     {
         self::assertInstanceOf(
             PhpSpreadsheetDriver::class,
@@ -47,7 +47,7 @@ class TemplateDownloadTest extends TestCase
         );
     }
 
-    public function test_下拉选项超过255不被截断(): void
+    public function test_dropdown_options_over_255_are_not_truncated(): void
     {
         $response = TemplateDownload::downloadResponse(ManyOptionsImporter::class);
 

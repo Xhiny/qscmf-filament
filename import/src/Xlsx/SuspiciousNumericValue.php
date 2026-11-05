@@ -5,11 +5,8 @@ namespace Quansitech\Cmf\Import\Xlsx;
 use Closure;
 
 /**
- * 科学计数法 / 末位截断可疑值的行级检测规则。
- *
- * 可疑值由 CellNormalizer 原样透传进导入流水线，本规则在
- * XlsxImporter::getValidationRules() 中对所有列自动附加，
- * 命中后落入官方 FailedImportRow 行级失败通道。
+ * 科学计数法 / 末位截断可疑值的行级检测规则：可疑值由 CellNormalizer 原样透传，
+ * 由 XlsxImporter 对所有列自动附加，命中落入官方 FailedImportRow 行级失败通道。
  */
 final class SuspiciousNumericValue
 {

@@ -30,20 +30,90 @@ composer require quansitech/cmf-module-media
 
 `cmf:install` 会自动发布配置（`config/cmf-media.php`）并执行迁移（`cmf_media` / `cmf_media_usages`）。
 
-环境配置：
+环境变量见下方「环境配置（.env）」。local 驱动无需凭证，文件默认落 `public/cmf-media`（直接可访问）。
+
+## 环境配置（.env）
+
+配置项均可用环境变量覆盖（对应 `config/cmf-media.php` 中的 `env()` 调用）。改完 `.env` 后需
+`php artisan config:clear` 生效；生产环境用 `php artisan config:cache` 重建缓存。
+
+### 全局变量
 
 ```dotenv
-CMF_MEDIA_DRIVER=tos          # tos / oss / cos / local
+CMF_MEDIA_DRIVER=tos               # tos / oss / cos / local，默认 tos
+CMF_MEDIA_MAX_SIZE=524288000       # 单文件上限（字节），默认 500MB
+CMF_MEDIA_VERIFY_ETAG=true         # callback 建档比对 ETag，防冒领，默认 true
+CMF_MEDIA_CROP_MAX_WIDTH=1600      # 裁剪产物最大像素宽
+CMF_MEDIA_CROP_QUALITY=0.92        # 裁剪 JPEG 重编码质量
+CMF_MEDIA_AUTO_DELETE=true         # 引用归零自动软删并排期清理云端对象
+CMF_MEDIA_DELETE_DELAY=60          # 归零删除缓冲（分钟），需队列 worker
+CMF_MEDIA_ORPHAN_CLEANUP_HOURS=24  # 孤儿文件清理宽限（小时）
+CMF_MEDIA_ROUTE_PREFIX=cmf-media   # 上传/访问路由前缀
+CMF_MEDIA_AUDIT=false              # 切换可审计媒体模型（需已装审计模块）
+```
+
+### 云驱动凭证
+
+只有 `bucket` 有值的驱动才会注册 disk，因此可一次配好多家、用 `CMF_MEDIA_DRIVER` 切换；
+凭证留空或 adapter 未安装时，相关 disk 解析会得到明确异常。
+
+```dotenv
+# 火山引擎 TOS
 TOS_ACCESS_KEY=...
 TOS_SECRET_KEY=...
 TOS_REGION=cn-beijing
 TOS_BUCKET=...
 TOS_ENDPOINT=tos-s3-cn-beijing.volces.com   # 必须是 S3 兼容域名；
                                             # 原生域名 tos-{region}.volces.com 只认 TOS4 签名，会 403
-# OSS_* / COS_* 同理，见配置文件注释
+TOS_URL=https://media.example.com           # 自定义访问域名，见下节
+TOS_THUMB_SUFFIX="?x-tos-process=image/resize,w_200"
+
+# 阿里云 OSS
+OSS_ACCESS_KEY_ID=...
+OSS_ACCESS_KEY_SECRET=...
+OSS_BUCKET=...
+OSS_ENDPOINT=oss-cn-hangzhou.aliyuncs.com
+OSS_URL=https://media.example.com
+OSS_THUMB_SUFFIX="?x-oss-process=image/resize,w_200"
+
+# 腾讯云 COS
+COS_SECRET_ID=...
+COS_SECRET_KEY=...
+COS_REGION=ap-guangzhou
+COS_BUCKET=example-1250000000               # 含 appid
+COS_URL=https://media.example.com
+COS_THUMB_SUFFIX="?imageMogr2/thumbnail/200x200"
+
+# 本地磁盘（CMF_MEDIA_DRIVER=local；两项都不设时默认 public/cmf-media、URL /cmf-media，
+# 不要留空赋值，留空会覆盖默认值）
+# CMF_MEDIA_LOCAL_ROOT=/data/cmf-media
+# CMF_MEDIA_LOCAL_URL=/cmf-media
 ```
 
-local 驱动无需凭证，文件默认落 `public/cmf-media`（直接可访问）。
+### 自定义访问域名（TOS_URL / OSS_URL / COS_URL）
+
+`*_URL` 即 `disks.{driver}.url`，是访问 URL 的 host，未配置时回退到默认 bucket 域名
+（`https://{bucket}.{endpoint}/{key}`）。
+
+配置用法（以 TOS 为例）：
+
+1. 在 TOS 控制台为 bucket 绑定自定义域名（如 `media.example.com`）并完成 CNAME 解析；
+2. `.env` 填 `TOS_URL=https://media.example.com`（含协议头，末尾斜杠可有可无）；
+3. `php artisan config:clear` 后，`$media->url()` / `thumbUrl()` 即走该域名。
+
+注意：
+
+- **`disposition=inline` 预览必须依赖自定义域名**：TOS/OSS/COS 默认 bucket 域名在投递层
+  对所有 GET 强制返回 `attachment`（对象元数据覆盖无效），绑定自定义域名后 inline 才生效；
+  `attachment` 下载行为在默认域名下即可用。
+- 变量只在配置了对应 bucket 的驱动上生效，切换驱动时按驱动分别填写；
+- `thumb_suffix` 是追加在 URL 后的图片处理参数，绑定自定义域名后同样可用。
+
+### 无环境变量的配置项
+
+`allowed_mimes`、`rules`（按入口上传规则）、`picker_library`、`sign_expires`、`middleware` /
+`file_middleware`、`model` / `resource` / `policy` 等无对应环境变量，需直接改
+`config/cmf-media.php`（`cmf:install` 发布后的文件）。
 
 ## 使用示例
 
@@ -182,7 +252,8 @@ $media->urlForEntry('export');      // 下载入口（attachment + 原始文件�
   由服务端输出响应头）。业务代码统一用 `urlForEntry` 表达场景，环境差异由方法内部抹平。
 - **inline 预览需要自定义访问域名**：TOS/OSS/COS 默认 bucket 域名对 GET 强制返回
   `attachment`（安全策略），需绑定自定义域名并配置 `disks.{driver}.url`
-  （如 `TOS_URL`）后 `inline` 才生效；`attachment` 在默认域名下即可生效。
+  （如 `TOS_URL`）后 `inline` 才生效；`attachment` 在默认域名下即可生效。配置方法见
+  「环境配置（.env）→ 自定义访问域名」。
 
 ## RichEditor 富文本接管
 

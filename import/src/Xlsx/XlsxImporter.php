@@ -6,12 +6,9 @@ use Filament\Actions\Imports\Downloaders\Contracts\Downloader;
 use Filament\Actions\Imports\Importer;
 
 /**
- * xlsx 导入基类：业务侧以本类替代官方 Importer 作为父类，
- * 行级校验 / 转换 / 钩子 / sync-async 等 API 完全沿用官方，既有 Rule 对象零迁移。
- *
- * - 对所有列自动附加科学计数法 / 截断可疑值检测规则（可疑值由解析端透传至此，
- *   落入官方 FailedImportRow 行级失败通道，失败原因为中文）
- * - 默认覆写失败清单下载器为 xlsx 输出
+ * xlsx 导入基类：业务侧以本类替代官方 Importer 作为父类，官方 API 零迁移。
+ * 对所有列自动附加可疑值检测规则（命中落入官方 FailedImportRow 行级失败通道，
+ * 中文原因），并默认覆写失败清单下载器为 xlsx 输出。
  */
 abstract class XlsxImporter extends Importer
 {

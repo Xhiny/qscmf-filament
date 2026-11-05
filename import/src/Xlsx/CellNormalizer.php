@@ -9,15 +9,11 @@ use OpenSpout\Common\Entity\Cell\EmptyCell;
 use OpenSpout\Common\Entity\Cell\FormulaCell;
 
 /**
- * 单元格归一器：把 openspout 读出的 Cell 转为字符串值。
- *
- * 规则（specs/xlsx-import「单元格归一与脏数据拒绝」）：
- * - 数字 → 字符串化；安全整数区（|v| < 2^53）精确输出，无科学计数法
- * - 超出安全区的整数（16 位以上长数字）在 Excel 保存时已被截断，以科学计数法
- *   字符串原样透传 —— 归一层不抛行级异常，由 XlsxImporter 的检测规则行级拒绝
- * - 日期 → Y-m-d H:i:s（1904 日历由 openspout 按 workbookPr date1904 自动换算）
- * - 公式 → 取缓存值；无缓存值按 0（openspout 上游语义，读取层不可区分真 0 与缓存缺失）
- * - 空单元格 → null（整行全空时由转换器跳过该行）
+ * 单元格归一器：把 openspout 读出的 Cell 转为字符串值（specs/xlsx-import「单元格归一与脏数据拒绝」）。
+ * 数字精确字符串化——安全区（|v| < 2^53）无科学计数法；超区长整数 Excel 保存端已截断，
+ * 以科学计数法字样透传交由 XlsxImporter 行级拒绝；日期 → Y-m-d H:i:s（1904 日历由
+ * openspout 按 date1904 自动换算）；公式取缓存值，无缓存按 0（openspout 上游语义）；
+ * 空单元格 → null（整行全空时由转换器跳过该行）。
  */
 final class CellNormalizer
 {
@@ -81,14 +77,12 @@ final class CellNormalizer
                 return number_format($value, 0, '.', '');
             }
 
-            // 超出安全区：Excel 保存时末位已被截断，保留科学计数法字样透传，
-            // 由导入端 SuspiciousNumericValue 行级拒绝
+            // 超出安全区：Excel 保存端已截断，保留科学计数法字样透传
             return (string) $value;
         }
 
-        // 非整数：定点十进制输出。PHP (string) 对 |v| < 1e-4 的小数产生科学计数法
-        // 字样（如 0.00005 → 5.0E-5），会在字符串层被误判为可疑值整行拒绝，
-        // 可疑值机制定位为零误伤护栏——仅超安全区整数透传科学计数法字样
+        // 非整数定点输出：PHP (string) 对 |v| < 1e-4 的小数会产生科学计数法字样，
+        // 会在字符串层被可疑值机制误判整行拒绝
         return rtrim(rtrim(number_format($value, 10, '.', ''), '0'), '.');
     }
 

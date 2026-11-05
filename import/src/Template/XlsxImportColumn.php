@@ -6,14 +6,10 @@ use Closure;
 use Filament\Actions\Imports\ImportColumn;
 
 /**
- * 带模板层声明能力的导入列：与行级 rules() 同在 getColumns() 单一事实源。
- *
- * - textLock()：模板单元格锁定为文本格式（numFmt `@`），防 Excel 将长数字
- *   （身份证号等）转为科学计数法造成不可逆精度丢失
- * - length(min, max)：模板 textLength 单元格校验；单参为精确长度
- * - dropdown(DropdownSource)：模板下拉选项（隐藏 _options sheet 范围引用）
- *
- * 普通 ImportColumn 列无模板校验，行为不变。
+ * 带模板层声明能力的导入列，与行级 rules() 同在 getColumns() 单一事实源。
+ * textLock() 锁文本格式（numFmt `@`）防 Excel 把长数字转科学计数法丢精度；
+ * length() 挂 textLength 校验（单参为精确长度）；dropdown() 挂隐藏 _options
+ * 范围引用下拉。普通 ImportColumn 列无模板校验，行为不变。
  */
 class XlsxImportColumn extends ImportColumn
 {
@@ -32,9 +28,6 @@ class XlsxImportColumn extends ImportColumn
         return $this;
     }
 
-    /**
-     * length($max) / length($exact) 为精确长度，length($min, $max) 为区间。
-     */
     public function length(int|Closure|null $min = null, int|Closure|null $max = null): static
     {
         if (func_num_args() === 1) {

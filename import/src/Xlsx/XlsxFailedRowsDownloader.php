@@ -18,19 +18,13 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 use Throwable;
 
 /**
- * 失败清单 xlsx 下载器：失败行原数据（表头保持原文件表头序）+ 末列中文
- * 「失败原因」＝该行全部原因拼接，并按「表头 ≈ 导入列 label」匹配挂载与
- * 模板一致的单元格约束（numFmt `@` / textLength / 下拉 `_options` 快照）。
+ * 失败清单 xlsx 下载器：失败行原数据（表头保持原文件表头序）+ 末列中文「失败原因」，
+ * 并按「表头 ≈ 导入列 label」匹配挂载与模板一致的单元格约束。
  *
- * - 数据单元格一律 setValueExplicit 字符串写入：setValue 对数字字符串按数值
- *   类型绑定落盘，长数字（身份证等）打开即科学计数法，且重传会触发科学计数
- *   法检测规则形成失败循环
- * - 匹配口径镜像官方 ImportColumn::getGuesses() 归一，保证官方表头嗅探能自动
- *   映射的表头在清单侧同样挂上约束；匹配不上（如导入时手动改过列映射）的列
- *   降级为无约束、原数据完整保留，服务端行级校验兜底
- * - 约束装配整体 try/catch：装配含 DropdownSource 真查询，异常时降级为无约束
- *   纯数据清单（增强能力失败不得拖垮数据导出基线）
- * - 不做错误列高亮（后续优化候选）
+ * - 数据单元格一律 setValueExplicit 字符串写入：数值绑定会让长数字（身份证等）
+ *   打开即科学计数法，且重传触发检测规则形成失败循环
+ * - 匹配口径镜像官方 ImportColumn::getGuesses()；匹配不上的列降级为无约束、原数据保留
+ * - 装配含 DropdownSource 真查询，整体 try/catch 异常降级为无约束纯数据清单
  */
 class XlsxFailedRowsDownloader implements Downloader
 {
@@ -113,7 +107,6 @@ class XlsxFailedRowsDownloader implements Downloader
 
         $matched = [];
 
-        // 末列「失败原因」不参与匹配，直接以 null 占位
         foreach (array_slice($headers, 0, -1) as $header) {
             $matched[] = $guessMap[$this->normalizeHeader($header)] ?? null;
         }
@@ -162,7 +155,6 @@ class XlsxFailedRowsDownloader implements Downloader
 
         foreach ($failedRows as $rowIndex => $failedImportRow) {
             $data = $failedImportRow->data ?? [];
-            // 与表头同口径剔除快照中的旧「失败原因」键，保证值与表头对齐
             unset($data[self::REASON_COLUMN]);
 
             $this->writeRow($mainSheet, $rowIndex + 2, [
