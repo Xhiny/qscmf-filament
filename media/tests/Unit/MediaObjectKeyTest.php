@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Illuminate\Validation\ValidationException;
 use Quansitech\Cmf\Media\Models\Media;
 
 /**
@@ -28,4 +29,23 @@ it('combines directory with the disposition dimension', function (): void {
     $hash = str_repeat('ab', 16);
 
     expect(Media::objectKey($hash, 'pdf', 'attachment', 'docs'))->toBe('docs/ab/'.$hash.'.attachment.pdf');
+});
+
+it('accepts only keys under the cdn path prefix', function (): void {
+    config()->set('filesystems.disks.cmf-media-cos.cdn.path_prefix', ' t4tstudio/ ');
+
+    Media::assertKeyWithinCdnPrefix('t4tstudio/ab/hash.jpg', 'cos');
+
+    expect(fn () => Media::assertKeyWithinCdnPrefix('ab/hash.jpg', 'cos'))
+        ->toThrow(ValidationException::class)
+        ->and(fn () => Media::assertKeyWithinCdnPrefix('t4tstudiox/ab/hash.jpg', 'cos'))
+        ->toThrow(ValidationException::class);
+});
+
+it('skips the cdn prefix guard when no prefix is configured', function (): void {
+    config()->set('filesystems.disks.cmf-media-cos.cdn.path_prefix', '  ');
+
+    Media::assertKeyWithinCdnPrefix('ab/hash.jpg', 'cos');
+
+    expect(Media::cdnPathPrefix('cos'))->toBe('');
 });

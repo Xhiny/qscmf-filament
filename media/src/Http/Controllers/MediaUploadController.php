@@ -7,6 +7,7 @@ namespace Quansitech\Cmf\Media\Http\Controllers;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Routing\Controller;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\ValidationException;
@@ -90,6 +91,8 @@ class MediaUploadController extends Controller
         // disposition 参与对象 key：同一内容按访问行为各存一个对象（去重维度）
         $key = Media::objectKey($data['hash'], $ext, $rule?->disposition ?? '', $rule?->path ?? '');
         $driver = MediaManager::driver();
+
+        Media::assertKeyWithinCdnPrefix($key, $driver);
 
         // local：无需云签名，直传应用服务器的 upload 端点（POST multipart）；
         // rule 随表单字段透传，中转上传与直传执行同一套入口规则
@@ -225,7 +228,7 @@ class MediaUploadController extends Controller
         $model = $this->model();
         Gate::authorize('viewAny', $model);
 
-        /** @var \Illuminate\Pagination\LengthAwarePaginator $paginator */
+        /** @var LengthAwarePaginator $paginator */
         $paginator = $model::query()
             ->latest()
             ->paginate(min(50, max(1, (int) $request->integer('per_page', 24))));

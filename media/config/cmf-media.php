@@ -87,9 +87,11 @@ return [
                 'auth_type' => env('COS_CDN_AUTH_TYPE'),
                 'primary_key' => env('COS_CDN_SIGN_KEY'),
                 'quantize_seconds' => env('COS_CDN_QUANTIZE_SECONDS', 0),
-                // CDN 域名在控制台关联的桶内子目录（回源源路径）。非空时 url() 出口剥掉
-                // 该前缀（对象 Key/DB path 仍为全路径，上传与查重不变），CDN 鉴权签名
-                // uri 同步用剥后 path。空 = CDN 关联桶根（URL Path ≡ Key，存量行为不变）。
+                // CDN 域名在控制台关联的桶内子目录（回源源路径）。仅 COS 驱动消费
+                // （TOS/OSS 自定义域名暂无此开关）。非空时 url() 出口剥掉该前缀（对象
+                // Key/DB path 仍为全路径，上传与查重不变），CDN 鉴权签名 uri 同步用剥后
+                // path；上传期校验 key 落在该目录下，否则 422。
+                // 空 = CDN 关联桶根（URL Path ≡ Key，存量行为不变）。
                 'path_prefix' => env('COS_CDN_PATH_PREFIX', ''),
                 // TypeA 专用：rand 固定值（随机值会让 URL 每次不同）、uid
                 'rand' => env('COS_CDN_RAND', ''),

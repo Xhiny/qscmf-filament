@@ -57,6 +57,8 @@ class MediaUploader
         $key = Media::objectKey($hash, $ext, $disposition, $rule?->path ?? '');
         $driver = MediaManager::driver();
 
+        Media::assertKeyWithinCdnPrefix($key, $driver);
+
         // 先查重再落盘：命中直接复用，避免跨目录重复上传遗留无记录指向的孤儿对象
         $existing = $this->findExisting($hash, $disposition);
         if ($existing instanceof Media) {
