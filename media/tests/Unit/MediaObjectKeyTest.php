@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Illuminate\Validation\ValidationException;
 use Quansitech\Cmf\Media\Models\Media;
+use Quansitech\Cmf\Media\Support\MediaManager;
 
 /**
  * 对象 key 目录段拼接：directory 为空时与存量格式逐字节一致（回归红线），
@@ -32,7 +33,10 @@ it('combines directory with the disposition dimension', function (): void {
 });
 
 it('accepts only keys under the cdn path prefix', function (): void {
-    config()->set('filesystems.disks.cmf-media-cos.cdn.path_prefix', ' t4tstudio/ ');
+    config()->set('filesystems.disks.cmf-media-cos.cdn', [
+        'url' => 'https://cdn.example.com',
+        'path_prefix' => ' t4tstudio/ ',
+    ]);
 
     Media::assertKeyWithinCdnPrefix('t4tstudio/ab/hash.jpg', 'cos');
 
@@ -43,9 +47,12 @@ it('accepts only keys under the cdn path prefix', function (): void {
 });
 
 it('skips the cdn prefix guard when no prefix is configured', function (): void {
-    config()->set('filesystems.disks.cmf-media-cos.cdn.path_prefix', '  ');
+    config()->set('filesystems.disks.cmf-media-cos.cdn', [
+        'url' => 'https://cdn.example.com',
+        'path_prefix' => '  ',
+    ]);
 
     Media::assertKeyWithinCdnPrefix('ab/hash.jpg', 'cos');
 
-    expect(Media::cdnPathPrefix('cos'))->toBe('');
+    expect(MediaManager::normalizeCdnPathPrefix('  '))->toBe('');
 });

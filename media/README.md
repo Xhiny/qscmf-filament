@@ -415,7 +415,7 @@ COS_CDN_PATH_PREFIX=t4tstudio
 
 - 值必须与控制台「回源源路径」**逐字一致**（首尾空白与斜杠会被归一）；改控制台必须同步改 env
 - 签名 uri 与 URL 拼接同用剥后 path（同源），边缘按 URL Path 复算 md5 才能通过；未开鉴权（仅加速）同样剥；仅加速时 `temporaryUrl` 仍走原生 COS 域名 + 全 Key q-sign（不剥）
-- 上传期守卫：`sign` 与 `store` 在签发/落盘前校验对象 key 是否落在前缀下，不满足直接 422（消息带 key、前缀与该提示），不让脏对象进库
+- 上传期守卫：`sign`、`store`、回调建档三处校验对象 key 是否落在前缀下，不满足直接 422（消息带 key、前缀与处置提示），不让脏对象进库。校验条件与 adapter 换用同源——`cdn.url` 与 `auth_type` 都为空时 CDN 出口未启用，前缀不参与拼接，不拦上传
 - 判重复用保留首传 path（`config/cmf-media.php` 的 path 注释）：历史按无 path 规则落过桶根的对象，开启前缀后**重传不会自愈**——秒传命中那条根路径记录并删掉新 key，`url()` 依旧 null。存量只能搬迁，不能靠重传
 - 对象不在该目录之下 → `url()` 抛 `InvalidArgumentException`（该对象边缘必 404，不应静默）。模型层 `Media::url()` 不 500，退化为 null 并记一条 warning（含 `disk` / `path` / 异常对象），按 disk + 异常类型去重；半配置（`auth_type` 缺 `url` / `primary_key`、驱动 adapter 未装）在 `Storage::disk()` 解析期失败同样留痕，只有磁盘未注册（该驱动未启用）才静默
 
@@ -439,7 +439,7 @@ COS_CDN_PATH_PREFIX=t4tstudio
 - 上线前在真环境用生产实际的 `auth_type` 各验一条：签名 URL 的 path + 回源源路径 == 控制台对象 Key，200 通过后再全量放开
 - 回滚：把 `COS_CDN_PATH_PREFIX` 置空并 `php artisan config:clear` 即恢复「CDN 关联桶根」的存量行为（对象、DB、签名口径均未改动，可随时回退）
 
-> `Media::url()` 的退化路径：磁盘解析失败（已注册但半配置 / adapter 未装）→ null + warning；或 `url()` 抛 → 回退 `temporaryUrl()`（开鉴权时同样抛）→ null + warning。每个 disk 每种异常每请求只记一条，排查看日志里的 `exception` / `temporary_url_exception` 堆栈，或直接 `Storage::disk('cmf-media-cos')->url($path)` 看真实异常。
+> `Media::url()` 的退化路径：磁盘解析失败（已注册但半配置 / adapter 未装）→ null + warning；或 `url()` 抛 → 回退 `temporaryUrl()`（开鉴权时同样抛）→ null + warning。每个 disk 每种异常（类型 + 消息指纹）只记一条——Web 每请求复位，队列/CLI 下随进程存活；排查看日志里的 `exception` / `temporary_url_exception` 堆栈，或直接 `Storage::disk('cmf-media-cos')->url($path)` 看真实异常。
 
 ## COS 排障：404 被吞成「对象不存在」
 

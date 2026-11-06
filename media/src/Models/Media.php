@@ -15,6 +15,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 use Quansitech\Cmf\Media\Jobs\DeleteMediaJob;
+use Quansitech\Cmf\Media\Support\MediaManager;
 use Quansitech\Cmf\Media\Support\UploadRule;
 use Throwable;
 
@@ -103,7 +104,15 @@ class Media extends Model
      */
     public static function assertKeyWithinCdnPrefix(string $key, string $driver): void
     {
-        $prefix = self::cdnPathPrefix($driver);
+        $cdn = config('filesystems.disks.'.self::diskName($driver).'.cdn');
+
+        // 与 adapter 的启用条件同源：CDN 出口未启用时 url() 走原生全 Key，
+        // 前缀不参与拼接，桶根对象照常可用，不应拒绝上传
+        if (! is_array($cdn) || ! MediaManager::cdnEnabled($cdn)) {
+            return;
+        }
+
+        $prefix = MediaManager::normalizeCdnPathPrefix($cdn['path_prefix'] ?? '');
 
         if ($prefix === '' || str_starts_with($key, $prefix.'/')) {
             return;
@@ -112,13 +121,6 @@ class Media extends Model
         throw ValidationException::withMessages([
             'path' => "对象落点 {$key} 不在 CDN 子目录 {$prefix}/ 下：检查该入口规则的 path，或清空 COS_CDN_PATH_PREFIX",
         ]);
-    }
-
-    public static function cdnPathPrefix(string $driver): string
-    {
-        $prefix = config('filesystems.disks.'.self::diskName($driver).'.cdn.path_prefix', '');
-
-        return trim((string) $prefix, " \t\n\r\0\x0B/");
     }
 
     /**
@@ -162,7 +164,7 @@ class Media extends Model
             $disk = Storage::disk($diskName);
         } catch (Throwable $error) {
             if (config("filesystems.disks.{$diskName}") !== null) {
-                $this->logUrlFailure($diskName, $error::class, [
+                $this->logUrlFailure($diskName, [$error], [
                     'media_id' => $this->id,
                     'disk' => $this->disk,
                     'path' => $this->path,
@@ -179,7 +181,7 @@ class Media extends Model
             try {
                 return $disk->temporaryUrl($this->path, now()->addSeconds($ttl));
             } catch (Throwable $temporaryError) {
-                $this->logUrlFailure($diskName, $urlError::class.'/'.$temporaryError::class, [
+                $this->logUrlFailure($diskName, [$urlError, $temporaryError], [
                     'media_id' => $this->id,
                     'disk' => $this->disk,
                     'path' => $this->path,
@@ -193,12 +195,19 @@ class Media extends Model
     }
 
     /**
-     * 同一 disk 上按根因（异常类型）各记一条，跨请求去重靠容器标记（每请求/每测试天然复位）。
+     * 同一 disk 上按根因（异常类型 + 消息指纹）各记一条；去重状态存容器，
+     * Web 每请求复位，队列/CLI 下随进程存活。
      *
+     * @param  list<Throwable>  $errors
      * @param  array<string, mixed>  $context
      */
-    private function logUrlFailure(?string $diskName, string $reason, array $context): void
+    private function logUrlFailure(string $diskName, array $errors, array $context): void
     {
+        $reason = implode('/', array_map(
+            fn (Throwable $error): string => $error::class.':'.substr(md5($error->getMessage()), 0, 8),
+            $errors
+        ));
+
         $marker = "cmf-media.url-failure.{$diskName}.{$reason}";
 
         if (app()->bound($marker)) {

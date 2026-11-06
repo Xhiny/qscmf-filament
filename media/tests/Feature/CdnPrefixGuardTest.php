@@ -14,7 +14,10 @@ use Quansitech\Cmf\Media\Support\MediaUploader;
 beforeEach(function (): void {
     config([
         'cmf-media.default' => 'cos',
-        'filesystems.disks.cmf-media-cos.cdn.path_prefix' => 't4tstudio',
+        'filesystems.disks.cmf-media-cos.cdn' => [
+            'url' => 'https://cdn.example.com',
+            'path_prefix' => 't4tstudio',
+        ],
         'cmf-media.rules' => [
             't4t' => ['mimes' => ['image/*'], 'path' => 't4tstudio'],
         ],
@@ -56,4 +59,21 @@ it('store rejects a key outside the prefix before touching the disk', function (
         ->toThrow(ValidationException::class);
 
     expect(Storage::disk('cmf-media-cos')->allFiles())->toBe([]);
+});
+
+it('skips the guard when the cdn segment is not actually in use', function (): void {
+    actingAsTestUser();
+
+    // 只设了前缀、CDN 域名与鉴权都没配：adapter 不换，url() 走原生全 Key，桶根对象可用
+    config()->set('filesystems.disks.cmf-media-cos.cdn', ['path_prefix' => 't4tstudio']);
+
+    $hash = str_repeat('a', 32);
+
+    $this->postJson(route('cmf-media.sign'), [
+        'hash' => $hash,
+        'name' => 'photo.jpg',
+        'mime' => 'image/jpeg',
+        'size' => 2048,
+    ])->assertOk()
+        ->assertJsonPath('path', 'aa/'.$hash.'.jpg');
 });

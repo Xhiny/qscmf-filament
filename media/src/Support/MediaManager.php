@@ -62,6 +62,27 @@ class MediaManager
     }
 
     /**
+     * CDN 出口是否启用：url 或 auth_type 任一非空即换 CDN 适配器
+     * （与 ServiceProvider 选 adapter 的判定同源）。
+     *
+     * @param  array<string, mixed>  $cdn
+     */
+    public static function cdnEnabled(array $cdn): bool
+    {
+        return $cdn !== []
+            && ((string) ($cdn['url'] ?? '') !== '' || (string) ($cdn['auth_type'] ?? '') !== '');
+    }
+
+    /**
+     * CDN 子目录前缀归一：env 带引号时空白会让 needle 永不匹配，首尾斜杠会让
+     * 剥离与拼接错位。
+     */
+    public static function normalizeCdnPathPrefix(mixed $value): string
+    {
+        return trim((string) $value, " \t\n\r\0\x0B/");
+    }
+
+    /**
      * 已配置（云驱动凭证非空；local 恒可用）的驱动列表。
      *
      * @return list<string>

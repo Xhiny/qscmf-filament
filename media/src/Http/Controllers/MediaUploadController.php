@@ -191,6 +191,10 @@ class MediaUploadController extends Controller
         }
 
         $driver = MediaManager::driver();
+
+        // 纵深防御：sign 与 callback 之间可能发生配置漂移（前缀后配），建档前再校一次
+        Media::assertKeyWithinCdnPrefix($data['path'], $driver);
+
         $info = $inspector->inspect(Media::diskName($driver), $data['path']);
 
         if ($info === null) {

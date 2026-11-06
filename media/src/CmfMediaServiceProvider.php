@@ -24,6 +24,7 @@ use Quansitech\Cmf\Media\Flysystem\OssFilesystemAdapter;
 use Quansitech\Cmf\Media\Listeners\UpdateMediaRefCount;
 use Quansitech\Cmf\Media\Models\AuditableMedia;
 use Quansitech\Cmf\Media\Models\Media;
+use Quansitech\Cmf\Media\Support\MediaManager;
 use Quansitech\Cmf\Media\Support\StorageObjectInspector;
 use RuntimeException;
 use Spatie\LaravelPackageTools\Package;
@@ -207,7 +208,7 @@ class CmfMediaServiceProvider extends PackageServiceProvider
 
             // CDN 鉴权段仅影响访问 URL 出口；未配置时 adapter 类都不换，存量行为不变
             $cdn = is_array($config['cdn'] ?? null) ? $config['cdn'] : [];
-            $useCdn = $cdn !== [] && ((string) ($cdn['url'] ?? '') !== '' || (string) ($cdn['auth_type'] ?? '') !== '');
+            $useCdn = MediaManager::cdnEnabled($cdn);
             $adapterClass = $useCdn
                 ? \Quansitech\Cmf\Media\Flysystem\CosCdnAdapter::class
                 : \Overtrue\Flysystem\Cos\CosAdapter::class;
