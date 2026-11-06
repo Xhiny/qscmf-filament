@@ -21,8 +21,9 @@ interface CdnAuthSigner
      * 生成带边缘鉴权签名的访问 URL。
      *
      * @param  string  $baseUrl  CDN 域名（无尾斜杠），如 https://cdn.example.com
-     * @param  string  $uri      资源路径，以 / 开头，与对象 key 一致
-     * @param  int|null  $at     签发时间戳（Unix 秒）；null = 当前时刻。测试注入点
+     * @param  string  $uri  资源路径，以 / 开头，与最终访问 URL 的 path 一致
+     *                       （CDN 关联子目录时已剥掉回源前缀，此时不等于对象 key）
+     * @param  int|null  $at  签发时间戳（Unix 秒）；null = 当前时刻。测试注入点
      */
     public function sign(string $baseUrl, string $uri, ?int $at = null): string;
 }

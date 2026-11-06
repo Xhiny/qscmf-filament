@@ -38,7 +38,7 @@ class CosCdnAdapter extends CosAdapter
             throw new \InvalidArgumentException('CosCdnAdapter 已启用（cdn.auth_type 已配置）但 cdn.url 缺失：请配置 disks.cos.cdn.url（CDN 加速域名），或移除 auth_type 以使用原生 COS 访问');
         }
 
-        $this->cdnPathPrefix = trim((string) ($this->config['cdn']['path_prefix'] ?? ''), '/');
+        $this->cdnPathPrefix = $this->normalizePathPrefix((string) ($this->config['cdn']['path_prefix'] ?? ''));
         $this->cdnSigner();
     }
 
@@ -76,6 +76,12 @@ class CosCdnAdapter extends CosAdapter
         }
 
         return $this->getUrl($path);
+    }
+
+    private function normalizePathPrefix(string $value): string
+    {
+        // 空白也要去：env 带引号时 needle 永远不匹配，报错反指向「对象放错目录」
+        return trim($value, " \t\n\r\0\x0B/");
     }
 
     /**

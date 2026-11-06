@@ -468,14 +468,30 @@ CDN 域名在控制台若关联的是桶内子目录（「回源源路径」= `t
 COS_CDN_PATH_PREFIX=t4tstudio
 ```
 
-- 值必须与控制台「回源源路径」**逐字一致**（首尾斜杠随意，代码会归一）；改控制台必须同步改 env
-- 签名 uri 与 URL 拼接同用剥后 path（同源），边缘按 URL Path 复算 md5 才能通过；未开鉴权（仅加速）同样剥
-- 对象不在该目录之下 → `url()` 抛 `InvalidArgumentException`（该对象边缘必 404，不应静默）
+- 值必须与控制台「回源源路径」**逐字一致**（首尾空白与斜杠会被归一）；改控制台必须同步改 env
+- 签名 uri 与 URL 拼接同用剥后 path（同源），边缘按 URL Path 复算 md5 才能通过；未开鉴权（仅加速）同样剥；仅加速时 `temporaryUrl` 仍走原生 COS 域名 + 全 Key q-sign（不剥）
+- 对象不在该目录之下 → `url()` 抛 `InvalidArgumentException`（该对象边缘必 404，不应静默）。模型层 `Media::url()` 不 500，退化为 null 并记一条 warning（含 `disk` / `path` / 异常对象），按 disk 进程内去重；半配置（`auth_type` 缺 `url` / `primary_key`、驱动 adapter 未装）在 `Storage::disk()` 解析期失败同样留痕，只有磁盘未注册（该驱动未启用）才静默
+
 - 空（默认）= CDN 关联桶根，URL Path 即全 Key，存量行为不变
 
 排障公式：**签名 URL 去掉域名的 path 段 + 回源源路径 == COS 控制台里的对象 Key**。等式不成立即 404（路径偏移）或 403（鉴权 uri 错位）。
 
-> 半配置/路径守卫的异常若在 `Media::url()` 模型层观察不到（存量 catch 会回退 temporaryUrl），排查时直接 `Storage::disk('cmf-media-cos')->url($path)` 看真实异常。
+#### 既有项目升级（必读）
+
+`cmf:install` 不覆盖已发布的文件，存量宿主的 `config/cmf-media.php` 里可能连 `cdn` 段都没有（更早发布的版本）或没有 `path_prefix` 键，此时**只设 `COS_CDN_PATH_PREFIX` 不生效**（env 无人读取，前缀恒为空，双重前缀 404 原样保留）。二选一：
+
+1. 手动把本包 `config/cmf-media.php` 中 `disks.cos.cdn` 段（含 `path_prefix`）补到宿主配置；
+2. `php artisan cmf:install --force` 后 `git diff config/cmf-media.php` 逐项核对，保留本项目的其它自定义。
+
+#### 启用前提与回滚
+
+`path_prefix` 是部署约束，不是向后兼容的开关：
+
+- 所有上传入口规则（`cmf-media.rules.*.path`）必须落在该目录下，存量对象也必须已位于 `{prefix}/`；否则这些记录 `url()` 全部失败 → 模型层 null，后台媒体库与前台接口成片空白（包内暂无对象搬迁命令，需自行用 `coscmd` / `rclone` 等搬迁后再启用）
+- 上线前在真环境用生产实际的 `auth_type` 各验一条：签名 URL 的 path + 回源源路径 == 控制台对象 Key，200 通过后再全量放开
+- 回滚：把 `COS_CDN_PATH_PREFIX` 置空并 `php artisan config:clear` 即恢复「CDN 关联桶根」的存量行为（对象、DB、签名口径均未改动，可随时回退）
+
+> `Media::url()` 的退化路径：磁盘解析失败（已注册但半配置 / adapter 未装）→ null + warning；或 `url()` 抛 → 回退 `temporaryUrl()`（开鉴权时同样抛）→ null + warning。每个 disk 每进程只记一条，排查看日志里的 `exception` / `temporary_url_exception` 堆栈，或直接 `Storage::disk('cmf-media-cos')->url($path)` 看真实异常。
 
 ## 深入实现
 

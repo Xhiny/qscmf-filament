@@ -9,7 +9,9 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Foundation\Auth\User;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Quansitech\Cmf\Media\Jobs\DeleteMediaJob;
 use Quansitech\Cmf\Media\Support\UploadRule;
@@ -39,6 +41,9 @@ use Throwable;
 class Media extends Model
 {
     use HasFactory, SoftDeletes;
+
+    /** 进程内 URL 失败日志去重（按 disk）：坏记录成片时不按行刷屏 */
+    private static array $urlFailureLoggedDisks = [];
 
     protected $table = 'cmf_media';
 
@@ -110,7 +115,7 @@ class Media extends Model
     public function uploader(): BelongsTo
     {
         /** @var class-string<Model> $model */
-        $model = config('auth.providers.users.model') ?: \Illuminate\Foundation\Auth\User::class;
+        $model = config('auth.providers.users.model') ?: User::class;
 
         return $this->belongsTo($model, 'uploader_id');
     }
@@ -129,22 +134,51 @@ class Media extends Model
      */
     public function url(int $ttl = 600): ?string
     {
+        $diskName = static::diskName($this->disk);
+
         try {
-            $disk = Storage::disk(static::diskName($this->disk));
-        } catch (Throwable) {
-            // 对应驱动的 adapter 未安装时，列表页等展示场景不因此 500
+            $disk = Storage::disk($diskName);
+        } catch (Throwable $error) {
+            if (config("filesystems.disks.{$diskName}") !== null) {
+                $this->logUrlFailure($diskName, [
+                    'media_id' => $this->id,
+                    'disk' => $this->disk,
+                    'path' => $this->path,
+                    'exception' => $error,
+                ]);
+            }
+
             return null;
         }
 
         try {
             return $disk->url($this->path);
-        } catch (Throwable) {
+        } catch (Throwable $urlError) {
             try {
                 return $disk->temporaryUrl($this->path, now()->addSeconds($ttl));
-            } catch (Throwable) {
+            } catch (Throwable $temporaryError) {
+                $this->logUrlFailure($diskName, [
+                    'media_id' => $this->id,
+                    'disk' => $this->disk,
+                    'path' => $this->path,
+                    'exception' => $urlError,
+                    'temporary_url_exception' => $temporaryError,
+                ]);
+
                 return null;
             }
         }
+    }
+
+    private function logUrlFailure(?string $diskName, array $context): void
+    {
+        if (isset(self::$urlFailureLoggedDisks[$diskName])) {
+            return;
+        }
+
+        self::$urlFailureLoggedDisks[$diskName] = true;
+
+        Log::warning('媒体 URL 生成失败，已退化为 null', $context);
     }
 
     /**
