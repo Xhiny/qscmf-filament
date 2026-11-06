@@ -205,7 +205,14 @@ class CmfMediaServiceProvider extends PackageServiceProvider
             $appId = str_contains($bucket, '-') ? substr($bucket, (int) strrpos($bucket, '-') + 1) : '';
             $name = $appId !== '' ? substr($bucket, 0, (int) strrpos($bucket, '-')) : $bucket;
 
-            $adapter = new \Overtrue\Flysystem\Cos\CosAdapter([
+            // CDN 鉴权段仅影响访问 URL 出口；未配置时 adapter 类都不换，存量行为不变
+            $cdn = is_array($config['cdn'] ?? null) ? $config['cdn'] : [];
+            $useCdn = $cdn !== [] && ((string) ($cdn['url'] ?? '') !== '' || (string) ($cdn['auth_type'] ?? '') !== '');
+            $adapterClass = $useCdn
+                ? \Quansitech\Cmf\Media\Flysystem\CosCdnAdapter::class
+                : \Overtrue\Flysystem\Cos\CosAdapter::class;
+
+            $adapterConfig = [
                 // flysystem-cos 的 host 模板为 <bucket>-<app_id>，bucket 必须传不含
                 // appid 的裸名；传全名会拼出双重 appid 域名（桶不存在，一切服务端
                 // 操作 404，且被适配器吞成“对象不存在”的静默假阴性）
@@ -216,7 +223,15 @@ class CmfMediaServiceProvider extends PackageServiceProvider
                 'secret_key' => $config['secret_key'] ?? '',
                 // 兜底：Client 支持显式 domain，直接绕过模板拼接，拆分异常也不影响 host
                 'domain' => sprintf('%s.cos.%s.myqcloud.com', $bucket, $config['region'] ?? 'ap-guangzhou'),
-            ]);
+            ];
+            // cdn 数组只传给 CosCdnAdapter：原生 CosAdapter 的 cdn 语义是字符串域名
+            // （getUrl 内 rtrim），默认 config 的 cdn 段「键全在、值 null」为非空
+            // 数组，传入会 TypeError
+            if ($useCdn) {
+                $adapterConfig['cdn'] = $cdn;
+            }
+
+            $adapter = new $adapterClass($adapterConfig);
 
             return new FilesystemAdapter(new Filesystem($adapter), $adapter, $config);
         });

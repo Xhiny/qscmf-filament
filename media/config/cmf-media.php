@@ -59,9 +59,41 @@ return [
             'secret_key' => env('COS_SECRET_KEY'),
             'region' => env('COS_REGION', 'ap-guangzhou'),
             'bucket' => env('COS_BUCKET'), // 含 appid，如 example-1250000000
-            // 自定义访问域名（COS 默认域名有安全下载策略，inline 预览需绑定）
+            // 自定义访问域名：OSS 驱动生效（优先拼 URL）；COS 驱动暂不消费
+            // 此键（自定义访问域名请走下方 cdn.url）
             'url' => env('COS_URL'),
             'thumb_suffix' => env('COS_THUMB_SUFFIX', '?imageMogr2/thumbnail/200x200'),
+
+            /*
+            |----------------------------------------------------------------------
+            | CDN 加速域名与边缘鉴权（私有桶推荐）
+            |----------------------------------------------------------------------
+            |
+            | 私有桶裸 URL 匿名 403；COS 原生 q-sign 签名打 CDN 域名也会被边缘
+            | 拒绝（两套验证体系互斥）。绑定开启鉴权的 CDN 域名后，url() 出口
+            | 按下述类型动态签发。未配置本段 = 存量行为（url 裸拼、q-sign 兜底）。
+            |
+            | auth_type：type_a / type_b / type_c / type_d（四类型算法对照见
+            |            README「CDN 鉴权」，须与控制台配置一致）
+            | quantize_seconds：时间戳量化桶（秒），默认 0（关闭）。仅影响
+            |            页面 URL 稳定性（两次渲染输出一致），不影响 CDN 命中
+            |            率（四种类型官方均自动排除鉴权参数出缓存 key）。
+            |            桶尾签发剩余有效期 = 有效时间 - quantize，故须 ≤
+            |            有效时间的 1/4
+            | 有效期由控制台「鉴权有效时间」全局决定，代码无法逐 URL 指定。
+            */
+            'cdn' => [
+                'url' => env('COS_CDN_URL'),
+                'auth_type' => env('COS_CDN_AUTH_TYPE'),
+                'primary_key' => env('COS_CDN_SIGN_KEY'),
+                'quantize_seconds' => env('COS_CDN_QUANTIZE_SECONDS', 0),
+                // TypeA 专用：rand 固定值（随机值会让 URL 每次不同）、uid
+                'rand' => env('COS_CDN_RAND', ''),
+                'uid' => env('COS_CDN_UID', '0'),
+                // TypeD 专用：参数名须与控制台一致
+                'sign_param' => env('COS_CDN_SIGN_PARAM', 'sign'),
+                'timestamp_param' => env('COS_CDN_TIMESTAMP_PARAM', 't'),
+            ],
         ],
         // 本地磁盘：文件落在应用服务器（默认 public/cmf-media，直接可访问），
         // 上传走 POST /{route_prefix}/upload（服务器接收并计算 hash 落盘），
