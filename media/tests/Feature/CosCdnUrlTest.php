@@ -55,6 +55,52 @@ it('keeps the native adapter untouched without cdn config（存量行为回归�
         ->toBe('example-1250000000.cos.ap-guangzhou.myqcloud.com');
 });
 
+it('strips cdn path_prefix and signs the stripped uri（子目录关联）', function () use ($baseCreds): void {
+    // 前缀故意带不规范首尾斜杠：构造期归一后仍应正确剥离
+    $disk = Storage::build([...$baseCreds, 'cdn' => [
+        'url' => 'https://cdn.example.com/',
+        'auth_type' => 'type_a',
+        'primary_key' => 'Kpath',
+        'rand' => 'fixedrand',
+        'path_prefix' => '/t4tstudio/',
+    ]]);
+
+    $url = $disk->url('t4tstudio/image/ab/x.jpg');
+
+    expect(parse_url($url, PHP_URL_HOST))->toBe('cdn.example.com')
+        ->and(parse_url($url, PHP_URL_PATH))->toBe('/image/ab/x.jpg')
+        ->and($url)->not->toContain('t4tstudio');
+
+    // TypeA 边缘复算口径：md5(剥后uri-ts-rand-uid-key)，签名 uri 必须用剥后 path
+    parse_str((string) parse_url($url, PHP_URL_QUERY), $query);
+    [$ts, $rand, $uid, $hash] = explode('-', (string) $query['sign']);
+    expect($hash)->toBe(md5(sprintf('/image/ab/x.jpg-%s-%s-%s-Kpath', $ts, $rand, $uid)))
+        ->and($rand)->toBe('fixedrand');
+});
+
+it('rejects paths outside the cdn path_prefix（不在关联目录下抛）', function () use ($baseCreds): void {
+    $disk = Storage::build([...$baseCreds, 'cdn' => [
+        'url' => 'https://cdn.example.com',
+        'auth_type' => 'type_a',
+        'primary_key' => 'Kpath',
+        'path_prefix' => 't4tstudio',
+    ]]);
+
+    expect(fn () => $disk->url('t4tstudio2/x.jpg'))->toThrow(InvalidArgumentException::class, '不在 CDN 关联目录')
+        ->and(fn () => $disk->url('outside/x.jpg'))->toThrow(InvalidArgumentException::class);
+});
+
+it('keeps temporaryUrl aligned with the stripped getUrl（同口径）', function () use ($baseCreds): void {
+    $disk = Storage::build([...$baseCreds, 'cdn' => [
+        'url' => 'https://cdn.example.com',
+        'auth_type' => 'type_a',
+        'primary_key' => 'Kpath',
+        'path_prefix' => 't4tstudio',
+    ]]);
+
+    expect($disk->temporaryUrl('t4tstudio/image/ab/x.jpg', 60))->toBe($disk->url('t4tstudio/image/ab/x.jpg'));
+});
+
 it('throws a clear config exception when auth_type is set without cdn.url（半配置守卫，盘使用即抛）', function () use ($baseCreds): void {
     expect(fn () => Storage::build([...$baseCreds, 'cdn' => [
         'url' => null,

@@ -459,6 +459,24 @@ composer install
 vendor/bin/pest
 ```
 
+
+### CDN 子目录关联（path_prefix）
+
+CDN 域名在控制台若关联的是桶内子目录（「回源源路径」= `t4tstudio/`），边缘回源拼 Key 的方式是「源路径 + URL Path」。此时对象 Key 仍是全路径（`t4tstudio/image/ab/hash.jpg`，DB、查重、删除、q-sign 兜底均用全 Key，上传逻辑零改动），但 `url()` 出口必须剥掉前缀——否则边缘拼出 `t4tstudio/t4tstudio/...` → 404。
+
+```env
+COS_CDN_PATH_PREFIX=t4tstudio
+```
+
+- 值必须与控制台「回源源路径」**逐字一致**（首尾斜杠随意，代码会归一）；改控制台必须同步改 env
+- 签名 uri 与 URL 拼接同用剥后 path（同源），边缘按 URL Path 复算 md5 才能通过；未开鉴权（仅加速）同样剥
+- 对象不在该目录之下 → `url()` 抛 `InvalidArgumentException`（该对象边缘必 404，不应静默）
+- 空（默认）= CDN 关联桶根，URL Path 即全 Key，存量行为不变
+
+排障公式：**签名 URL 去掉域名的 path 段 + 回源源路径 == COS 控制台里的对象 Key**。等式不成立即 404（路径偏移）或 403（鉴权 uri 错位）。
+
+> 半配置/路径守卫的异常若在 `Media::url()` 模型层观察不到（存量 catch 会回退 temporaryUrl），排查时直接 `Storage::disk('cmf-media-cos')->url($path)` 看真实异常。
+
 ## 深入实现
 
 以下实现细节不在本 README 展开，以代码注释为准，需要时直接阅读：
