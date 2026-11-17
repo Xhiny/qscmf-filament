@@ -17,7 +17,7 @@ class ViewMedia extends ViewRecord
     {
         return [
             DeleteAction::make()
-                ->disabled(fn (Media $record): bool => $record->ref_count > 0),
+                ->visible(fn (Media $record): bool => $record->ref_count === 0),
         ];
     }
 }

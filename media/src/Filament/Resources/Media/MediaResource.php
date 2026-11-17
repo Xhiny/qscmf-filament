@@ -160,9 +160,9 @@ class MediaResource extends Resource
     {
         return [
             ViewAction::make(),
-            // 仍被引用的媒体禁止删除（归零后删除会自动排期清理云端对象）
+            // 仍被引用的媒体不出现删除入口（归零后删除会自动排期清理云端对象）
             DeleteAction::make()
-                ->disabled(fn (Media $record): bool => $record->ref_count > 0),
+                ->visible(fn (Media $record): bool => $record->ref_count === 0),
         ];
     }
 

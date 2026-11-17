@@ -59,7 +59,7 @@ it('sorts by ref_count', function (): void {
         ->assertCanSeeTableRecords([$high, $low], inOrder: true);
 });
 
-it('disables the delete action for referenced media', function (): void {
+it('hides the delete action for referenced media（被引用不出删除按钮）', function (): void {
     actingAsTestUser();
 
     $referenced = createMedia();
@@ -68,8 +68,23 @@ it('disables the delete action for referenced media', function (): void {
     $orphan = createMedia();
 
     Livewire::test(ListMedia::class)
-        ->assertTableActionDisabled('delete', $referenced)
-        ->assertTableActionEnabled('delete', $orphan);
+        ->assertTableActionHidden('delete', $referenced)
+        ->assertTableActionVisible('delete', $orphan);
+});
+
+it('hides the delete action on the view page for referenced media（详情页同步）', function (): void {
+    actingAsTestUser();
+
+    $referenced = createMedia();
+    Post::create(['title' => 'x'])->attachMedia($referenced->id, 'cover');
+
+    $orphan = createMedia();
+
+    Livewire::test(ViewMedia::class, ['record' => $referenced->getRouteKey()])
+        ->assertActionHidden('delete');
+
+    Livewire::test(ViewMedia::class, ['record' => $orphan->getRouteKey()])
+        ->assertActionVisible('delete');
 });
 
 it('renders the view page with usage details', function (): void {
